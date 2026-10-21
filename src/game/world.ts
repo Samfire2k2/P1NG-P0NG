@@ -136,6 +136,17 @@ export class World {
     this.ai.color = ai
   }
 
+  /**
+   * Couleurs par raquette (gauche / droite). En ligne, la raquette distante
+   * porte la couleur choisie par l'adversaire.
+   */
+  setColors(left: Rgb, right: Rgb): void {
+    this.playerColor = left
+    this.player.color = left
+    this.aiColor = right
+    this.ai.color = right
+  }
+
   reset(target = this.target): void {
     this.phase = 'serve'
     this.time = 0

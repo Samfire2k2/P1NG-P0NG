@@ -52,11 +52,17 @@ export function rgbToCss(rgb: Rgb, alpha = 1): string {
 }
 
 /** Couleur de l'IA : hue complémentaire, saturé et lumineux pour contraster. */
+export function aiHsvFrom(hsv: Hsv): Hsv {
+  return {
+    h: (hsv.h + 180) % 360,
+    s: clamp(Math.max(hsv.s, 0.72), 0, 1),
+    v: clamp(Math.max(hsv.v, 0.9), 0, 1),
+  }
+}
+
 export function aiColorFrom(hsv: Hsv): Rgb {
-  const h = hsv.h + 180
-  const s = clamp(Math.max(hsv.s, 0.72), 0, 1)
-  const v = clamp(Math.max(hsv.v, 0.9), 0, 1)
-  return hsvToRgb(h, s, v)
+  const ai = aiHsvFrom(hsv)
+  return hsvToRgb(ai.h, ai.s, ai.v)
 }
 
 export const PRESET_HUES = [

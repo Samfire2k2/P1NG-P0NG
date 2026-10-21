@@ -1,4 +1,4 @@
-import { aiColorFrom, hsvToRgb, rgbToCss } from '../game/colors'
+import { hsvToRgb, rgbToCss } from '../game/colors'
 import type { EngineState } from '../game/engine'
 import { IconExpand, IconHome, IconMute, IconPause, IconPlay, IconRestart, IconVolume } from './icons'
 
@@ -45,17 +45,21 @@ export default function Hud({
   onMenu,
 }: HudProps) {
   const playerCss = rgbToCss(hsvToRgb(state.color.h, state.color.s, state.color.v))
-  const aiCss = rgbToCss(aiColorFrom(state.color))
+  const peerCss = rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v))
   const online = state.mode === 'online'
   // En ligne, l'hôte est à gauche, l'invité à droite.
   const localIsLeft = state.side === 'left'
   // Sur les deux écrans, scorePlayer = raquette de gauche, scoreAi = raquette de droite.
   const leftScore = state.scorePlayer
   const rightScore = state.scoreAi
-  const leftColor = localIsLeft ? playerCss : aiCss
-  const rightColor = localIsLeft ? aiCss : playerCss
-  const leftLabel = localIsLeft ? 'Vous' : 'Adversaire'
-  const rightLabel = localIsLeft ? 'Adversaire' : 'Vous'
+  const leftColor = localIsLeft ? playerCss : peerCss
+  const rightColor = localIsLeft ? peerCss : playerCss
+  const leftLabel = localIsLeft
+    ? state.playerName || 'Vous'
+    : state.peerName || 'Adversaire'
+  const rightLabel = localIsLeft
+    ? state.peerName || 'Adversaire'
+    : state.playerName || 'Vous'
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10 select-none">

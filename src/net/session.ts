@@ -7,9 +7,10 @@ export type NetStatus = 'idle' | 'connecting' | 'waiting' | 'connected' | 'error
 export const CTRL = {
   REMATCH_REQUEST: 1,
   REMATCH_ACCEPT: 2,
-  PING: 3,
-  PONG: 4,
-  HELLO: 5,
+  START: 3,
+  PING: 4,
+  PONG: 5,
+  HELLO: 6,
 } as const
 
 /** Instantané de l'état de la partie, envoyé par l'hôte à 60 Hz. */
@@ -49,6 +50,14 @@ export const NET_EVENT = {
   LOSE: 7,
 } as const
 
+/** Profil du joueur transmis à l'adversaire (pseudo + couleur). */
+export interface NetMeta {
+  name: string
+  h: number
+  s: number
+  v: number
+}
+
 const SNAPSHOT_FLOATS = 16
 const SNAPSHOT_BYTES = SNAPSHOT_FLOATS * 4
 
@@ -57,6 +66,7 @@ export interface NetSessionHandlers {
   onSnapshot?: (snapshot: NetSnapshot) => void
   onInput?: (paddleY: number) => void
   onControl?: (code: number) => void
+  onMeta?: (meta: NetMeta) => void
   onPeerJoin?: () => void
   onPeerLeave?: () => void
 }
@@ -104,6 +114,7 @@ export class NetSession {
   private stateAction: MessageAction<Uint8Array> | null = null
   private inputAction: MessageAction<Uint8Array> | null = null
   private ctrlAction: MessageAction<Uint8Array> | null = null
+  private metaAction: MessageAction<string> | null = null
   private snapshotBytes = new Uint8Array(SNAPSHOT_BYTES)
   private snapshotFloats = new Float32Array(this.snapshotBytes.buffer)
   private pingTimer = 0
@@ -141,6 +152,9 @@ export class NetSession {
     this.stateAction = room.makeAction<Uint8Array>('state')
     this.inputAction = room.makeAction<Uint8Array>('input')
     this.ctrlAction = room.makeAction<Uint8Array>('ctrl')
+    this.metaAction = room.makeAction<string>('meta')
+
+    this.metaAction.onMessage = (data) => this.handleMeta(data)
 
     this.stateAction.onMessage = (data) => this.handleState(data)
     this.inputAction.onMessage = (data) => {
@@ -210,6 +224,28 @@ export class NetSession {
       this.setStatus('closed', 'Le joueur adverse a quitté la partie')
       this.handlers.onPeerLeave?.()
     }
+  }
+
+  /** Pseudo + couleur du joueur : envoyés à l'adversaire. */
+  private handleMeta(data: string): void {
+    try {
+      const parsed = JSON.parse(data) as Partial<NetMeta>
+      if (typeof parsed?.name !== 'string' || typeof parsed?.h !== 'number') return
+      this.handlers.onMeta?.({
+        name: parsed.name.slice(0, 18),
+        h: parsed.h,
+        s: typeof parsed.s === 'number' ? parsed.s : 0.9,
+        v: typeof parsed.v === 'number' ? parsed.v : 1,
+      })
+    } catch {
+      /* profil illisible : on l'ignore */
+    }
+  }
+
+  /** Envoie le profil (pseudo + couleur) à l'adversaire. */
+  sendMeta(meta: NetMeta): void {
+    if (!this.metaAction || !this.peerId) return
+    void this.metaAction.send(JSON.stringify(meta), { target: this.peerId })
   }
 
   private handleState(data: Uint8Array): void {
@@ -289,6 +325,7 @@ export class NetSession {
     this.stateAction = null
     this.inputAction = null
     this.ctrlAction = null
+    this.metaAction = null
     this.peerId = null
     this.latency = 0
     if (this.status !== 'idle') this.setStatus('idle')

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { aiColorFrom, hsvToRgb, rgbToCss, type Hsv } from './game/colors'
+import { aiHsvFrom, hsvToRgb, rgbToCss, type Hsv } from './game/colors'
 import { audio } from './game/audio'
 import { DIFFICULTIES, type Difficulty } from './game/constants'
 import { GameEngine, type EngineState } from './game/engine'
+import { music } from './game/music'
 import { normalizeRoomCode } from './net/session'
 import EndOverlay from './ui/EndOverlay'
 import Hud from './ui/Hud'
@@ -10,6 +11,7 @@ import PauseOverlay from './ui/PauseOverlay'
 import StartOverlay, { type GameModeTab } from './ui/StartOverlay'
 
 const STORAGE_KEY = 'p1ng-p0ng-settings'
+const NAME_KEY = 'p1ng-p0ng-name'
 
 interface Settings {
   color: Hsv
@@ -56,6 +58,16 @@ function saveSettings(settings: Settings): void {
   }
 }
 
+/** Pseudo du joueur (persisté d'une session à l'autre). */
+function loadName(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    return (localStorage.getItem(NAME_KEY) ?? '').slice(0, 18)
+  } catch {
+    return ''
+  }
+}
+
 /** Paramètres d'invitation présents dans l'URL (?room=CODE&key=CLE). */
 function readInviteParams(): { code: string; key: string } {
   if (typeof window === 'undefined') return { code: '', key: '' }
@@ -74,8 +86,11 @@ export default function App() {
   const [tab, setTab] = useState<GameModeTab>('ai')
   const [invite] = useState(readInviteParams)
   const [inviteLink, setInviteLink] = useState('')
+  const [playerName, setPlayerName] = useState(loadName)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  const playerNameRef = useRef(playerName)
+  playerNameRef.current = playerName
 
   // Création du moteur (une seule fois)
   useEffect(() => {
@@ -98,12 +113,13 @@ export default function App() {
     const unsubscribe = engine.subscribe(setState)
     engine.run()
     // Crochet de test : permet aux scripts de vérification d'inspecter l'état.
-    ;(window as unknown as { __pingPong?: unknown }).__pingPong = { engine, audio }
+    ;(window as unknown as { __pingPong?: unknown }).__pingPong = { engine, audio, music }
     // Invitation reçue par URL : on rejoint le salon automatiquement.
     if (invite.code) {
       setTab('online')
       engine.joinOnlineRoom(invite.code, invite.key)
     }
+    engine.setPlayerName(playerNameRef.current)
     return () => {
       unsubscribe()
       engine.dispose()
@@ -112,14 +128,26 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Synchronisation de l'accent visuel avec la couleur choisie
+  // Démarre l'audio (effets + musique) au premier geste utilisateur
+  useEffect(() => {
+    const kick = () => audio.init()
+    window.addEventListener('pointerdown', kick, { once: true })
+    window.addEventListener('keydown', kick, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', kick)
+      window.removeEventListener('keydown', kick)
+    }
+  }, [])
+
+  // Synchronisation de l'accent visuel : couleur locale et couleur de l'adversaire
   useEffect(() => {
     const root = document.documentElement
     const player = rgbToCss(hsvToRgb(settings.color.h, settings.color.s, settings.color.v))
-    const ai = rgbToCss(aiColorFrom(settings.color))
+    const remote = state?.peerColor ?? aiHsvFrom(settings.color)
+    const ai = rgbToCss(hsvToRgb(remote.h, remote.s, remote.v))
     root.style.setProperty('--accent', player)
     root.style.setProperty('--accent-ai', ai)
-  }, [settings.color])
+  }, [settings.color, state?.peerColor])
 
   // Persistance
   useEffect(() => {
@@ -144,6 +172,27 @@ export default function App() {
     const { color } = settingsRef.current
     audio.hue(color.h)
   }, [])
+
+  /** Change le pseudo : il est transmis à l'adversaire. */
+  const handleNameChange = useCallback((name: string) => {
+    setPlayerName(name)
+    engineRef.current?.setPlayerName(name)
+  }, [])
+
+  /** L'hôte lance la rencontre en ligne. */
+  const handleStartMatch = useCallback(() => {
+    audio.init()
+    engineRef.current?.startOnlineMatch()
+  }, [])
+
+  // Persistance du pseudo
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAME_KEY, playerName)
+    } catch {
+      /* stockage indisponible */
+    }
+  }, [playerName])
 
   const handleDifficulty = useCallback((difficulty: Difficulty) => {
     setSettings((prev) => ({ ...prev, difficulty }))
@@ -266,6 +315,11 @@ export default function App() {
           roomCode={state.roomCode}
           initialCode={invite.code}
           initialKey={invite.key}
+          playerName={playerName}
+          peerName={state.peerName}
+          canStart={state.mode === 'online' && state.side === 'left' && state.peerConnected}
+          onNameChange={handleNameChange}
+          onStartMatch={handleStartMatch}
         />
       )}
 

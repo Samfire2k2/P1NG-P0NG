@@ -108,6 +108,16 @@ export class AudioEngine {
     this.persist()
   }
 
+  /** Contexte audio partagé (la musique s'y branche). */
+  get context(): AudioContext | null {
+    return this.ctx
+  }
+
+  /** Bus d'entrée du compresseur : la musique y est routée. */
+  get output(): AudioNode | null {
+    return this.compressor
+  }
+
   private get now(): number {
     return this.ctx ? this.ctx.currentTime : 0
   }

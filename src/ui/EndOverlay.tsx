@@ -1,4 +1,4 @@
-import { aiColorFrom, rgbToCss, hsvToRgb } from '../game/colors'
+import { rgbToCss, hsvToRgb } from '../game/colors'
 import type { EngineState } from '../game/engine'
 import { IconHome, IconPlay, IconTrophy } from './icons'
 
@@ -16,7 +16,7 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
   const won = localScore > otherScore
   const accent = won
     ? rgbToCss(hsvToRgb(state.color.h, state.color.s, state.color.v))
-    : rgbToCss(aiColorFrom(state.color))
+    : rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v))
 
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#05060a]/60 p-4 backdrop-blur-md">
@@ -39,7 +39,9 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
             {state.scorePlayer}
           </span>
           <span className="text-zinc-700">—</span>
-          <span style={{ color: rgbToCss(aiColorFrom(state.color)) }}>{state.scoreAi}</span>
+          <span style={{ color: rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v)) }}>
+            {state.scoreAi}
+          </span>
         </div>
 
         <button

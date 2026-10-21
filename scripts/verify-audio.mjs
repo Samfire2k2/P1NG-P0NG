@@ -92,6 +92,23 @@ try {
   })
   check(played.state === 'running', 'tous les effets sonores se jouent sans erreur')
 
+  // --- Musique synthwave ---
+  const musicState = await page.evaluate(() => {
+    const m = window.__pingPong?.music
+    if (!m) return null
+    return { ...m.status, bus: !!m.bus, noise: !!m.noise }
+  })
+  check(musicState?.track === 'game', `la piste de jeu est sélectionnée (${musicState?.track})`)
+  check(musicState?.running === true, 'le séquenceur musical tourne')
+  check(musicState?.bus === true && musicState?.noise === true, 'la synthèse musicale est initialisée')
+  check((musicState?.level ?? 0) > 0, `le volume de la musique est actif (${(musicState?.level ?? 0).toFixed(2)})`)
+
+  // La piste du menu est reprise hors partie
+  await page.evaluate(() => window.__pingPong.engine.backToMenu())
+  await wait(1200)
+  const menuState = await page.evaluate(() => window.__pingPong?.music?.status)
+  check(menuState?.track === 'menu', `retour à la piste du menu (${menuState?.track})`)
+
   // Mute
   await page.keyboard.press('KeyM')
   await wait(300)

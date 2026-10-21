@@ -1,10 +1,12 @@
 import { audio } from './audio'
 import type { Hsv } from './colors'
+import { aiHsvFrom, hsvToRgb } from './colors'
 import { FIXED_DT, MAX_STEPS_PER_FRAME, type Difficulty } from './constants'
 import { lerp } from './math'
+import { music } from './music'
 import { World, type GameEvent, type Side } from './world'
 import { SnapshotInterpolator } from '../net/interpolator'
-import { CTRL, NET_EVENT, NetSession, type NetSnapshot, type NetStatus } from '../net/session'
+import { CTRL, NET_EVENT, NetSession, type NetMeta, type NetSnapshot, type NetStatus } from '../net/session'
 import { DEFAULT_RENDER_SETTINGS, Renderer, type RenderSettings } from '../render/renderer'
 import { computeView, screenToWorldY } from '../render/view'
 
@@ -27,6 +29,12 @@ export interface EngineState {
   mode: GameMode
   /** Côté du joueur local : gauche = hôte, droite = invité. */
   side: 'left' | 'right'
+  /** Pseudo du joueur local. */
+  playerName: string
+  /** Pseudo de l'adversaire (vide si inconnu). */
+  peerName: string
+  /** Couleur de l'adversaire (ou de l'IA en solo). */
+  peerColor: Hsv
   netStatus: NetStatus
   roomCode: string
   latency: number
@@ -105,6 +113,11 @@ export class GameEngine {
   private latency = 0
   private peerConnected = false
   private rematchRequested = false
+  /** La rencontre a été lancée (hôte) ou confirmée (invité). */
+  private matchStarted = false
+  private playerName = ''
+  private peerName = ''
+  private peerColor: Hsv = { h: 0, s: 0.9, v: 1 }
   /** Effet sonore à relayer à l'invité (hôte uniquement). */
   private netEvent: { id: number; type: number; side: number; power: number; offset: number } | null = null
   private netEventId = 0
@@ -156,6 +169,9 @@ export class GameEngine {
       fps: Math.round(this.fps),
       mode: this.mode,
       side: this.session?.role === 'guest' ? 'right' : 'left',
+      playerName: this.playerName,
+      peerName: this.peerName,
+      peerColor: this.mode === 'online' ? this.peerColor : aiHsvFrom(this.color),
       netStatus: this.netStatus,
       roomCode: this.session?.roomId ?? '',
       latency: this.latency,
@@ -201,8 +217,10 @@ export class GameEngine {
 
   private restartLocal(): void {
     this.world.reset(this.target)
-    this.world.frozen = false
+    // L'invité ne simule pas la physique : l'hôte reste autoritatif.
+    this.world.frozen = !(this.mode === 'online' && this.session?.role === 'guest')
     this.renderer.resetTrail()
+    this.matchStarted = true
     this.phase = 'playing'
     this.accumulator = 0
     audio.init()
@@ -224,8 +242,46 @@ export class GameEngine {
 
   setColor(color: Hsv): void {
     this.color = { ...color }
-    this.world.setPlayerColor(this.color)
+    this.applyColors()
+    this.sendMeta()
     this.emit(true)
+  }
+
+  /** Change le pseudo du joueur local et le transmet à l'adversaire. */
+  setPlayerName(name: string): void {
+    const clean = name.replace(/\s+/g, ' ').trim().slice(0, 18)
+    if (clean === this.playerName) return
+    this.playerName = clean
+    this.sendMeta()
+    this.emit(true)
+  }
+
+  /**
+   * Applique les couleurs aux deux raquettes : en solo l'adversaire porte la
+   * couleur complémentaire, en ligne il porte la couleur qu'il a choisie.
+   */
+  private applyColors(): void {
+    const local = this.color
+    if (this.mode === 'online') {
+      const peer = this.peerColor
+      const peerRgb = hsvToRgb(peer.h, peer.s, peer.v)
+      const localRgb = hsvToRgb(local.h, local.s, local.v)
+      const isGuest = this.session?.role === 'guest'
+      this.world.setColors(isGuest ? peerRgb : localRgb, isGuest ? localRgb : peerRgb)
+    } else {
+      this.world.setPlayerColor(local)
+    }
+  }
+
+  /** Transmet pseudo + couleur à l'adversaire. */
+  private sendMeta(): void {
+    if (!this.session || this.mode !== 'online') return
+    this.session.sendMeta({
+      name: this.playerName,
+      h: this.color.h,
+      s: this.color.s,
+      v: this.color.v,
+    })
   }
 
   setDifficulty(difficulty: Difficulty): void {
@@ -259,6 +315,7 @@ export class GameEngine {
       onSnapshot: this.onSnapshot,
       onInput: this.onRemoteInput,
       onControl: this.onControl,
+      onMeta: this.onMeta,
       onPeerJoin: () => this.onPeerJoin(),
       onPeerLeave: () => this.onPeerLeave(),
     })
@@ -299,7 +356,9 @@ export class GameEngine {
     this.world.aiRemote = true
     this.world.playerRemote = session.role === 'guest'
     this.world.netPaddleY = session.role === 'guest' ? this.world.ai.y : null
+    this.matchStarted = false
     this.phase = 'menu'
+    this.applyColors()
     this.emit(true)
   }
 
@@ -309,22 +368,33 @@ export class GameEngine {
     this.netStatus = 'idle'
     this.netMessage = ''
     this.peerConnected = false
+    this.peerName = ''
     this.latency = 0
     this.world.aiRemote = false
     this.world.playerRemote = false
     this.world.netPaddleY = null
     this.phase = 'menu'
+    this.applyColors()
     this.emit(true)
   }
 
   /** L'hôte démarre la partie quand l'invité arrive. */
   private onPeerJoin(): void {
     this.peerConnected = true
+    this.sendMeta()
     if (this.session?.role !== 'host') return
+    // La partie attend d'être lancée par l'hôte : l'invité peut encore
+    // choisir son pseudo et sa couleur.
     this.world.frozen = false
     this.world.reset(this.world.target)
-    this.phase = 'playing'
     this.emit(true)
+  }
+
+  /** Lancement de la rencontre par l'hôte. */
+  startOnlineMatch(): void {
+    if (this.mode !== 'online' || this.session?.role !== 'host') return
+    this.restartLocal()
+    this.session.sendControl(CTRL.START)
   }
   private onPeerLeave(): void {
     this.peerConnected = false
@@ -337,6 +407,13 @@ export class GameEngine {
     this.emit(true)
   }
 
+  private onMeta = (meta: NetMeta): void => {
+    this.peerName = meta.name
+    this.peerColor = { h: meta.h, s: meta.s, v: meta.v }
+    this.applyColors()
+    this.emit(true)
+  }
+
   private onRemoteInput = (paddleY: number): void => {
     this.world.netPaddleY = paddleY
   }
@@ -344,6 +421,11 @@ export class GameEngine {
   private onControl = (code: number): void => {
     if (code === CTRL.REMATCH_REQUEST) {
       this.rematchRequested = true
+      return
+    }
+    if (code === CTRL.START) {
+      // L'hôte lance la rencontre : l'invité démarre en même temps.
+      this.restartLocal()
     }
   }
 
@@ -356,6 +438,7 @@ export class GameEngine {
     if (this.mode !== 'online' || !this.session) return
     if (this.session.role === 'host') {
       this.restartLocal()
+      this.session.sendControl(CTRL.START)
     } else {
       this.session.sendControl(CTRL.REMATCH_REQUEST)
       this.netMessage = 'Demande de revanche envoyée…'
@@ -614,6 +697,7 @@ export class GameEngine {
         if (this.rematchRequested) {
           this.rematchRequested = false
           this.restartLocal()
+          this.session.sendControl(CTRL.START)
         }
         this.session.sendState(this.buildSnapshot())
       } else {
@@ -702,6 +786,9 @@ export class GameEngine {
   }
 
   private syncPhase(): void {
+    // Musique : piste de jeu pendant la partie, piste du menu sinon.
+    music.setTrack(this.phase === 'playing' ? 'game' : 'menu')
+
     if (this.mode === 'online') {
       const over = this.world.phase === 'over'
       if (over && this.phase !== 'gameover') {
@@ -710,7 +797,7 @@ export class GameEngine {
       } else if (!over && this.phase === 'gameover') {
         this.phase = 'playing'
         this.emit(true)
-      } else if (!over && this.phase === 'menu' && this.peerConnected) {
+      } else if (!over && this.phase === 'menu' && this.matchStarted) {
         this.phase = 'playing'
         this.emit(true)
       }
@@ -742,6 +829,9 @@ export class GameEngine {
       state.roomCode,
       state.peerConnected,
       state.netMessage,
+      state.playerName,
+      state.peerName,
+      state.peerColor.h.toFixed(1),
       Math.round(state.latency / 3),
       Math.round(state.fps / 4),
     ].join('|')

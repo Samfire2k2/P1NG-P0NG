@@ -50,6 +50,9 @@ const readEngine = (page) =>
       netMessage: state.netMessage,
       scorePlayer: state.scorePlayer,
       scoreAi: state.scoreAi,
+      playerName: state.playerName,
+      peerName: state.peerName,
+      peerHue: state.peerColor.h,
       ball: [world.ball.x, world.ball.y],
       fps: state.fps,
     }
@@ -85,9 +88,12 @@ try {
   })
 
   const context = await browser.newContext({ viewport: { width: 820, height: 540 } })
+  // L'invité est dans un contexte séparé : son localStorage (pseudo, réglages)
+  // est indépendant, comme sur deux machines différentes.
+  const guestContext = await browser.newContext({ viewport: { width: 820, height: 540 } })
   const errors = []
   const host = await context.newPage()
-  const guest = await context.newPage()
+  const guest = await guestContext.newPage()
   for (const page of [host, guest]) {
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (m) => {
@@ -100,6 +106,11 @@ try {
   await wait(2000)
   await host.getByRole('button', { name: /En ligne/i }).click()
   await wait(400)
+
+  // Pseudo et couleur de l'hôte : transmis à l'adversaire.
+  await host.getByLabel('Ton pseudo').fill('Nova')
+  await host.getByLabel('Teinte (arc-en-ciel)').fill('300')
+  await wait(300)
   await host.getByRole('button', { name: /Créer un salon/i }).click()
   await wait(2500)
 
@@ -117,6 +128,9 @@ try {
   // --- L'invité rejoint via le lien (aucune action manuelle) ---
   await guest.goto(inviteValue, { waitUntil: 'load' })
   await wait(2000)
+  await guest.getByLabel('Ton pseudo').fill('Zephyr')
+  await guest.getByLabel('Teinte (arc-en-ciel)').fill('120')
+  await wait(500)
 
   const connected = async (page) => {
     const state = await readEngine(page)
@@ -139,8 +153,27 @@ try {
   check(hostState?.role === 'host' && guestState?.role === 'guest', 'les rôles hôte/invité sont corrects')
   check(hostState?.roomCode === roomCode && guestState?.roomCode === roomCode, `les deux joueurs partagent le salon ${roomCode}`)
 
-  // --- La partie démarre des deux côtés ---
-  await wait(4000)
+  // --- Pseudo et couleur transmis à l'adversaire ---
+  check(hostState?.playerName === 'Nova', `l'hôte s'appelle Nova (${hostState?.playerName})`)
+  check(guestState?.playerName === 'Zephyr', `l'invité s'appelle Zephyr (${guestState?.playerName})`)
+  check(hostState?.peerName === 'Zephyr', `l'hôte voit le pseudo de l'adversaire (${hostState?.peerName})`)
+  check(guestState?.peerName === 'Nova', `l'invité voit le pseudo de l'adversaire (${guestState?.peerName})`)
+  check(
+    Math.abs((hostState?.peerHue ?? -1) - 120) < 2,
+    `l'hôte reçoit la couleur de l'adversaire (teinte ${Math.round(hostState?.peerHue ?? -1)}°)`,
+  )
+  check(
+    Math.abs((guestState?.peerHue ?? -1) - 300) < 2,
+    `l'invité reçoit la couleur de l'adversaire (teinte ${Math.round(guestState?.peerHue ?? -1)}°)`,
+  )
+
+  // --- La partie démarre ---
+  await wait(2500)
+  const hostReady = await host.evaluate(() => /Lancer la partie/i.test(document.body.innerText))
+  check(hostReady, "l'hôte peut lancer la rencontre")
+  await host.getByRole('button', { name: /Lancer la partie/i }).click()
+  await wait(3000)
+
   const hostPlaying = await readEngine(host)
   const guestPlaying = await readEngine(guest)
   check(hostPlaying?.phase === 'playing' || hostPlaying?.phase === 'gameover', `la partie démarre chez l'hôte (${hostPlaying?.phase})`)
@@ -175,26 +208,39 @@ try {
   // --- Le HUD associe le bon score au bon côté (gauche = hôte) ---
   const readHud = (page) =>
     page.evaluate(() => {
-      const m = document.body.innerText.match(/(\d+)\s*(VOUS|ADVERSAIRE)\s*(\d+)\s*(ADVERSAIRE|VOUS)/i)
-      if (!m) return null
-      return { left: Number(m[1]), leftLabel: m[2].toUpperCase(), right: Number(m[3]), rightLabel: m[4].toUpperCase() }
+      const left = document.querySelector('[class*="top-4"][class*="left-4"]')
+      const right = document.querySelector('[class*="top-4"][class*="right-4"]')
+      const score = (el) => Number(el?.children[0]?.textContent?.trim() ?? NaN)
+      const label = (el) => (el?.children[1]?.textContent?.trim() ?? '').toUpperCase()
+      return {
+        left: score(left),
+        leftLabel: label(left),
+        right: score(right),
+        rightLabel: label(right),
+      }
     })
   const hostHud = await readHud(host)
   const guestHud = await readHud(guest)
   check(
-    hostHud?.leftLabel === 'VOUS' &&
-      hostHud?.rightLabel === 'ADVERSAIRE' &&
+    hostHud?.leftLabel === 'NOVA' &&
+      hostHud?.rightLabel === 'ZEPHYR' &&
       hostHud?.left === hostScores?.scorePlayer &&
       hostHud?.right === hostScores?.scoreAi,
     `HUD de l'hôte : ${hostHud?.left} ${hostHud?.leftLabel} / ${hostHud?.right} ${hostHud?.rightLabel}`,
   )
   check(
-    guestHud?.leftLabel === 'ADVERSAIRE' &&
-      guestHud?.rightLabel === 'VOUS' &&
+    guestHud?.leftLabel === 'NOVA' &&
+      guestHud?.rightLabel === 'ZEPHYR' &&
       guestHud?.left === guestScores?.scorePlayer &&
       guestHud?.right === guestScores?.scoreAi,
     `HUD de l'invité : ${guestHud?.left} ${guestHud?.leftLabel} / ${guestHud?.right} ${guestHud?.rightLabel}`,
   )
+
+  // --- Les pseudos apparaissent dans le HUD ---
+  const hostNames = await host.evaluate(() => document.body.innerText)
+  const guestNames = await guest.evaluate(() => document.body.innerText)
+  check(/NOVA/i.test(hostNames) && /ZEPHYR/i.test(hostNames), "l'hôte voit les deux pseudos dans le HUD")
+  check(/NOVA/i.test(guestNames) && /ZEPHYR/i.test(guestNames), "l'invité voit les deux pseudos dans le HUD")
 
   // --- La position de la balle est cohérente entre les deux vues ---
   const hostBall = hostScores?.ball ?? [0, 0]

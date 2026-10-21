@@ -10,6 +10,11 @@ interface OnlineLobbyProps {
   peerConnected: boolean
   initialCode: string
   initialKey: string
+  playerName: string
+  peerName: string
+  canStart: boolean
+  onNameChange: (name: string) => void
+  onStartMatch: () => void
   onCreate: () => void
   onJoin: (code: string, key: string) => void
   onQuit: () => void
@@ -21,6 +26,37 @@ function Spinner() {
   )
 }
 
+/** Champ de pseudo : partagé par les deux joueurs. */
+function NameField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (name: string) => void
+}) {
+  return (
+    <div className="mb-4">
+      <label
+        htmlFor="player-name"
+        className="mb-2 block text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase"
+      >
+        Ton pseudo
+      </label>
+      <input
+        id="player-name"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={18}
+        placeholder="Pseudo du joueur"
+        autoComplete="off"
+        spellCheck={false}
+        className="font-mono-game w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none focus:border-[var(--accent)]"
+        aria-label="Ton pseudo"
+      />
+    </div>
+  )
+}
+
 export default function OnlineLobby({
   status,
   roomCode,
@@ -29,6 +65,11 @@ export default function OnlineLobby({
   peerConnected,
   initialCode,
   initialKey,
+  playerName,
+  peerName,
+  canStart,
+  onNameChange,
+  onStartMatch,
   onCreate,
   onJoin,
   onQuit,
@@ -38,9 +79,12 @@ export default function OnlineLobby({
   const [copied, setCopied] = useState(false)
 
   const waiting = status === 'waiting' || status === 'connecting'
+  const connected = status === 'connected' || peerConnected
+
+  let content: React.ReactNode = null
 
   if (waiting) {
-    return (
+    content = (
       <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5">
         <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
           <Spinner />
@@ -83,8 +127,7 @@ export default function OnlineLobby({
         )}
 
         <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
-          Partagez le lien (ou le code + la clé) : l’adversaire le rejoindra en un clic. La partie
-          démarre automatiquement dès qu’il arrive.
+          Partagez le lien (ou le code + la clé) : l’adversaire le rejoindra en un clic.
         </p>
 
         <button
@@ -97,22 +140,32 @@ export default function OnlineLobby({
         </button>
       </div>
     )
-  }
-
-  if (status === 'connected' || peerConnected) {
-    return (
+  } else if (connected) {
+    content = (
       <div className="rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.06] p-5 text-center">
         <IconTrophy className="mx-auto h-6 w-6" style={{ color: 'var(--accent)' }} />
-        <p className="mt-2 text-sm font-semibold text-white">Adversaire connecté</p>
-        <p className="mt-1 text-[11px] text-zinc-500">
-          {message || 'La partie commence…'}
+        <p className="mt-2 text-sm font-semibold text-white">
+          {peerName ? `${peerName} est connecté` : 'Adversaire connecté'}
         </p>
+        <p className="mt-1 text-[11px] text-zinc-500">{message || 'La partie commence…'}</p>
+        {canStart ? (
+          <button
+            type="button"
+            onClick={onStartMatch}
+            className="primary-button mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-bold tracking-[0.2em] uppercase"
+          >
+            <IconPlay className="h-4 w-4" />
+            Lancer la partie
+          </button>
+        ) : (
+          <p className="mt-4 text-[11px] tracking-[0.2em] text-zinc-500 uppercase">
+            En attente du lancement…
+          </p>
+        )}
       </div>
     )
-  }
-
-  if (status === 'closed' || status === 'error') {
-    return (
+  } else if (status === 'closed' || status === 'error') {
+    content = (
       <div className="rounded-2xl border border-rose-400/25 bg-rose-500/[0.06] p-5 text-center">
         <p className="text-sm font-semibold text-rose-200">
           {status === 'closed' ? 'L’adversaire a quitté' : 'Connexion impossible'}
@@ -129,57 +182,64 @@ export default function OnlineLobby({
         </button>
       </div>
     )
+  } else {
+    content = (
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={onCreate}
+          className="primary-button flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-[0.2em] uppercase"
+        >
+          <IconPlay className="h-4 w-4" />
+          Créer un salon
+        </button>
+
+        <div className="relative flex items-center gap-3 py-1">
+          <span className="h-px flex-1 bg-white/10" />
+          <span className="text-[10px] tracking-[0.3em] text-zinc-600 uppercase">ou</span>
+          <span className="h-px flex-1 bg-white/10" />
+        </div>
+
+        <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+          <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+            Rejoindre un salon
+          </div>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="CODE"
+            maxLength={8}
+            className="font-mono-game w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-center text-sm tracking-[0.3em] text-white outline-none focus:border-[var(--accent)]"
+            aria-label="Code du salon"
+          />
+          <input
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="Clé (optionnelle)"
+            className="font-mono-game mt-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[11px] text-white outline-none focus:border-[var(--accent)]"
+            aria-label="Clé du salon"
+          />
+          <button
+            type="button"
+            onClick={() => onJoin(code.trim(), key.trim())}
+            disabled={code.trim().length < 3}
+            className="glass-button mt-3 w-full rounded-xl px-4 py-2.5 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Rejoindre
+          </button>
+          <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
+            Le lien d’invitation contient le code <em>et</em> la clé : en collant l’URL complète, les
+            deux champs se remplissent automatiquement.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-3">
-      <button
-        type="button"
-        onClick={onCreate}
-        className="primary-button flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-[0.2em] uppercase"
-      >
-        <IconPlay className="h-4 w-4" />
-        Créer un salon
-      </button>
-
-      <div className="relative flex items-center gap-3 py-1">
-        <span className="h-px flex-1 bg-white/10" />
-        <span className="text-[10px] tracking-[0.3em] text-zinc-600 uppercase">ou</span>
-        <span className="h-px flex-1 bg-white/10" />
-      </div>
-
-      <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
-        <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-          Rejoindre un salon
-        </div>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          placeholder="CODE"
-          maxLength={8}
-          className="font-mono-game w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-center text-sm tracking-[0.3em] text-white outline-none focus:border-[var(--accent)]"
-          aria-label="Code du salon"
-        />
-        <input
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder="Clé (optionnelle)"
-          className="font-mono-game mt-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[11px] text-white outline-none focus:border-[var(--accent)]"
-          aria-label="Clé du salon"
-        />
-        <button
-          type="button"
-          onClick={() => onJoin(code.trim(), key.trim())}
-          disabled={code.trim().length < 3}
-          className="glass-button mt-3 w-full rounded-xl px-4 py-2.5 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Rejoindre
-        </button>
-        <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
-          Le lien d’invitation contient le code <em>et</em> la clé : en collant l’URL complète, les
-          deux champs se remplissent automatiquement.
-        </p>
-      </div>
+      <NameField value={playerName} onChange={onNameChange} />
+      {content}
     </div>
   )
 }

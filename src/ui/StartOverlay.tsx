@@ -26,6 +26,11 @@ interface StartOverlayProps {
   roomCode: string
   initialCode: string
   initialKey: string
+  playerName: string
+  peerName: string
+  canStart: boolean
+  onNameChange: (name: string) => void
+  onStartMatch: () => void
 }
 
 const TARGETS = [5, 7, 11]
@@ -49,6 +54,11 @@ export default function StartOverlay({
   roomCode,
   initialCode,
   initialKey,
+  playerName,
+  peerName,
+  canStart,
+  onNameChange,
+  onStartMatch,
 }: StartOverlayProps) {
   const netStatus: NetStatus = state.netStatus
 
@@ -140,6 +150,11 @@ export default function StartOverlay({
                   peerConnected={state.peerConnected}
                   initialCode={initialCode}
                   initialKey={initialKey}
+                  playerName={playerName}
+                  peerName={peerName}
+                  canStart={canStart}
+                  onNameChange={onNameChange}
+                  onStartMatch={onStartMatch}
                   onCreate={onCreateRoom}
                   onJoin={onJoinRoom}
                   onQuit={onQuitRoom}
