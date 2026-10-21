@@ -31,7 +31,7 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
           {won ? 'Victoire' : 'Défaite'}
         </h2>
         <p className="mt-2 text-xs tracking-[0.3em] text-zinc-500 uppercase">
-          {won ? 'L’arène est à vous' : 'L’adversaire l’emporte'}
+          {won ? 'Match gagné' : 'Match perdu'}
         </p>
 
         <div className="font-mono-game mt-6 flex items-center justify-center gap-5 text-4xl font-bold">

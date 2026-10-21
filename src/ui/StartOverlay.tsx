@@ -69,8 +69,8 @@ export default function StartOverlay({
         <div className="mb-7 grid grid-cols-2 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
           {(
             [
-              { id: 'ai' as const, label: 'Contre l’IA', hint: 'Difficulté moyenne' },
-              { id: 'online' as const, label: 'En ligne', hint: 'Salon 1 vs 1' },
+              { id: 'ai' as const, label: 'Contre l’IA', hint: '4 niveaux' },
+              { id: 'online' as const, label: 'En ligne', hint: 'Duel à deux' },
             ]
           ).map((item) => {
             const active = tab === item.id
@@ -115,12 +115,11 @@ export default function StartOverlay({
                 </div>
                 <h1 className="ping-title mt-3 text-5xl leading-[0.9] font-extrabold tracking-tight sm:text-6xl">
                   P1NG-P0NG
-                  <span className="block text-3xl sm:text-4xl">glow arena</span>
+                  <span className="block text-3xl sm:text-4xl">pong néon</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Un Pong néon propulsé par WebGL2 : bloom multi-niveaux, physique à pas fixe et
-                  une IA de difficulté <span className="text-zinc-200">moyenne</span> qui lit votre
-                  rythme. Choisissez votre couleur, le reste est une question de réflexes.
+                  Le Pong de base, en néon. Quatre niveaux de difficulté, une balle qui accélère à
+                  chaque rebond, et la couleur de ta raquette à choisir.
                 </p>
               </>
             ) : (
@@ -131,11 +130,11 @@ export default function StartOverlay({
                 </div>
                 <h1 className="ping-title mt-3 text-4xl leading-[0.95] font-extrabold tracking-tight sm:text-5xl">
                   DUEL
-                  <span className="block text-2xl sm:text-3xl">peer to peer</span>
+                  <span className="block text-2xl sm:text-3xl">1 contre 1</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Créez un salon, transmettez le lien : votre adversaire le rejoint et le duel
-                  démarre. Connexion directe WebRTC, aucun serveur de jeu.
+                  Crée un salon, envoie le lien. Ton adversaire clique, la partie démarre. La
+                  connexion passe en direct entre les deux navigateurs, sans serveur de jeu.
                 </p>
               </>
             )}
@@ -165,7 +164,7 @@ export default function StartOverlay({
                 {/* Difficulté */}
                 <div className="mt-6">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Difficulté de l’IA
+                    Niveau de l’IA
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
                     {DIFFICULTIES.map((difficulty) => {
@@ -190,7 +189,7 @@ export default function StartOverlay({
                 {/* Format */}
                 <div className="mt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Format
+                    Points gagnants
                   </div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {TARGETS.map((target) => {
@@ -205,7 +204,7 @@ export default function StartOverlay({
                           }`}
                           style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
                         >
-                          {target} points
+                          {target}
                         </button>
                       )
                     })}
@@ -216,7 +215,7 @@ export default function StartOverlay({
                 <div className="mt-4">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                      Intensité du glow
+                      Glow
                     </span>
                     <span className="font-mono-game text-[10px] text-zinc-600">
                       {Math.round(glow * 100)}%
@@ -234,7 +233,7 @@ export default function StartOverlay({
                       background:
                         'linear-gradient(90deg, rgba(53,224,255,0.25), rgba(53,224,255,1), rgba(255,255,255,0.9))',
                     }}
-                    aria-label="Intensité du glow"
+                    aria-label="Glow"
                   />
                 </div>
 
@@ -247,8 +246,8 @@ export default function StartOverlay({
                   Jouer
                 </button>
                 <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
-                  Souris ou flèches pour bouger · <span className="text-zinc-500">Espace</span> pause ·{' '}
-                  <span className="text-zinc-500">R</span> recommencer
+                  Souris ou flèches · <span className="text-zinc-500">Espace</span> = pause ·{' '}
+                  <span className="text-zinc-500">R</span> = relancer
                 </p>
               </>
             )}
@@ -258,7 +257,7 @@ export default function StartOverlay({
           <div className="flex flex-col">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                Couleur du joueur
+                Ta couleur
               </div>
               <div className="font-mono-game text-[10px] text-zinc-600">
                 H {Math.round(state.color.h)}° · S {Math.round(state.color.s * 100)}% · V{' '}
@@ -279,8 +278,8 @@ export default function StartOverlay({
                 }}
               />
               <div className="text-[11px] leading-snug text-zinc-500">
-                Votre raquette, votre traînée et l’ambiance de la salle. L’IA joue toujours en
-                couleur complémentaire.
+                Elle colore ta raquette, ta traînée et la lueur du terrain. En solo, l’IA prend la
+                couleur complémentaire. En duel, chacun garde la sienne.
               </div>
             </div>
           </div>

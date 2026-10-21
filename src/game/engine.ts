@@ -441,7 +441,7 @@ export class GameEngine {
       this.session.sendControl(CTRL.START)
     } else {
       this.session.sendControl(CTRL.REMATCH_REQUEST)
-      this.netMessage = 'Demande de revanche envoyée…'
+      this.netMessage = 'Revanche demandée…'
       this.emit(true)
     }
   }

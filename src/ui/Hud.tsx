@@ -55,11 +55,11 @@ export default function Hud({
   const leftColor = localIsLeft ? playerCss : peerCss
   const rightColor = localIsLeft ? peerCss : playerCss
   const leftLabel = localIsLeft
-    ? state.playerName || 'Vous'
+    ? state.playerName || 'Toi'
     : state.peerName || 'Adversaire'
   const rightLabel = localIsLeft
     ? state.peerName || 'Adversaire'
-    : state.playerName || 'Vous'
+    : state.playerName || 'Toi'
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10 select-none">
@@ -122,10 +122,10 @@ export default function Hud({
             Service{' '}
             {localIsLeft
               ? state.serveTo === 'player'
-                ? 'pour vous'
+                ? 'pour toi'
                 : 'pour l’adversaire'
               : state.serveTo === 'ai'
-                ? 'pour vous'
+                ? 'pour toi'
                 : 'pour l’adversaire'}
           </div>
         </div>

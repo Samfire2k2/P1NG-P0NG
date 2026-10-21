@@ -62,7 +62,7 @@ try {
 
   // Le HUD doit afficher un score
   const hud = await page.evaluate(() => document.body.innerText)
-  check(/VOUS/i.test(hud), 'le HUD affiche le score du joueur')
+  check(/TOI/i.test(hud), 'le HUD affiche le score du joueur')
   check(/ADVERSAIRE/i.test(hud), 'le HUD affiche le score de l’adversaire')
 
   // Déplacement de la souris : la raquette doit suivre

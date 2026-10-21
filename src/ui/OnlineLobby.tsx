@@ -47,7 +47,7 @@ function NameField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         maxLength={18}
-        placeholder="Pseudo du joueur"
+        placeholder="ex. Nova"
         autoComplete="off"
         spellCheck={false}
         className="font-mono-game w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none focus:border-[var(--accent)]"
@@ -88,7 +88,7 @@ export default function OnlineLobby({
       <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5">
         <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
           <Spinner />
-          {status === 'connecting' ? 'Connexion au salon' : 'En attente de l’adversaire'}
+          {status === 'connecting' ? 'Connexion…' : 'En attente d’un joueur'}
         </div>
 
         {roomCode && (
@@ -127,7 +127,7 @@ export default function OnlineLobby({
         )}
 
         <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
-          Partagez le lien (ou le code + la clé) : l’adversaire le rejoindra en un clic.
+          Envoie le lien, ou le code et la clé. Ton adversaire n’aura qu’à cliquer.
         </p>
 
         <button
@@ -168,10 +168,10 @@ export default function OnlineLobby({
     content = (
       <div className="rounded-2xl border border-rose-400/25 bg-rose-500/[0.06] p-5 text-center">
         <p className="text-sm font-semibold text-rose-200">
-          {status === 'closed' ? 'L’adversaire a quitté' : 'Connexion impossible'}
+          {status === 'closed' ? 'Partie interrompue' : 'Connexion impossible'}
         </p>
         <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-          {message || 'Vérifie le code du salon et réessaie.'}
+          {message || 'Vérifie le code et la clé, puis réessaie.'}
         </p>
         <button
           type="button"
@@ -228,8 +228,8 @@ export default function OnlineLobby({
             Rejoindre
           </button>
           <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
-            Le lien d’invitation contient le code <em>et</em> la clé : en collant l’URL complète, les
-            deux champs se remplissent automatiquement.
+            Le lien contient le code <em>et</em> la clé : colle l’URL complète et les deux champs se
+            remplissent tout seuls.
           </p>
         </div>
       </div>

@@ -196,7 +196,7 @@ export class NetSession {
 
     this.room.onPeerLeave = () => {
       this.peerId = null
-      this.setStatus('waiting', 'Le joueur adverse a quitté la partie')
+        this.setStatus('waiting', 'Ton adversaire a quitté la partie.')
       this.handlers.onPeerLeave?.()
     }
 
@@ -221,7 +221,7 @@ export class NetSession {
 
     this.room.onPeerLeave = () => {
       this.peerId = null
-      this.setStatus('closed', 'Le joueur adverse a quitté la partie')
+        this.setStatus('closed', 'Ton adversaire a quitté la partie.')
       this.handlers.onPeerLeave?.()
     }
   }
