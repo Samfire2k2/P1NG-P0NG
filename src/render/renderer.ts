@@ -1,0 +1,533 @@
+import {
+  FIELD_HEIGHT,
+  FIELD_WIDTH,
+  PADDLE_HEIGHT,
+  PADDLE_WIDTH,
+  TRAIL_LENGTH,
+} from '../game/constants'
+import { clamp, lerp } from '../game/math'
+import type { World } from '../game/world'
+import { computeView } from './view'
+import { SPRITE_CIRCLE, SPRITE_GLOW, SPRITE_ROUNDBOX, SpriteBatch } from './batch'
+import {
+  createProgram,
+  createRenderTarget,
+  disposeRenderTarget,
+  pickColorFormat,
+  Uniforms,
+  type RenderTarget,
+  type TextureFormat,
+} from './gl'
+import {
+  BACKGROUND_FS,
+  BLUR_FS,
+  BRIGHT_FS,
+  COMPOSITE_FS,
+  DOWNSAMPLE_FS,
+  FULLSCREEN_VS,
+  SPRITE_FS,
+  SPRITE_VS,
+  UPSAMPLE_FS,
+} from './shaders'
+
+const BLOOM_LEVELS = 5
+
+export interface RenderSettings {
+  bloomIntensity: number
+  chromatic: number
+  vignette: number
+  scanlines: number
+  grain: number
+}
+
+export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
+  bloomIntensity: 1.0,
+  chromatic: 0.0018,
+  vignette: 0.5,
+  scanlines: 0.055,
+  grain: 0.016,
+}
+
+const mix3 = (
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  t: number,
+): [number, number, number] => [
+  lerp(a[0], b[0], t),
+  lerp(a[1], b[1], t),
+  lerp(a[2], b[2], t),
+]
+
+/**
+ * Renderer WebGL2 : sprites instanciés + chaîne de bloom (pyramide) + composite
+ * (aberration chromatique, tone mapping ACES, vignette, scanlines, grain).
+ */
+export class Renderer {
+  private gl: WebGL2RenderingContext
+  private canvas: HTMLCanvasElement
+  private fmt: TextureFormat
+
+  private width = 1
+  private height = 1
+
+  private scene!: RenderTarget
+  private bloomA: RenderTarget[] = []
+  private bloomB: RenderTarget[] = []
+
+  private progSprite: WebGLProgram
+  private uSprite: Uniforms
+  private progBg: WebGLProgram
+  private uBg: Uniforms
+  private progBright: WebGLProgram
+  private uBright: Uniforms
+  private progDown: WebGLProgram
+  private uDown: Uniforms
+  private progBlur: WebGLProgram
+  private uBlur: Uniforms
+  private progUp: WebGLProgram
+  private uUp: Uniforms
+  private progComposite: WebGLProgram
+  private uComposite: Uniforms
+
+  private additive: SpriteBatch
+  private core: SpriteBatch
+  private fullscreenVao: WebGLVertexArrayObject
+
+  private trailX = new Float32Array(TRAIL_LENGTH)
+  private trailY = new Float32Array(TRAIL_LENGTH)
+  private trailCount = 0
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas
+    const gl = canvas.getContext('webgl2', {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      premultipliedAlpha: true,
+      powerPreference: 'high-performance',
+      preserveDrawingBuffer: false,
+      desynchronized: true,
+    })
+    if (!gl) throw new Error("WebGL2 n'est pas disponible sur ce navigateur")
+    this.gl = gl
+    this.fmt = pickColorFormat(gl)
+
+    this.progSprite = createProgram(gl, SPRITE_VS, SPRITE_FS)
+    this.uSprite = new Uniforms(gl, this.progSprite)
+    this.progBg = createProgram(gl, FULLSCREEN_VS, BACKGROUND_FS)
+    this.uBg = new Uniforms(gl, this.progBg)
+    this.progBright = createProgram(gl, FULLSCREEN_VS, BRIGHT_FS)
+    this.uBright = new Uniforms(gl, this.progBright)
+    this.progDown = createProgram(gl, FULLSCREEN_VS, DOWNSAMPLE_FS)
+    this.uDown = new Uniforms(gl, this.progDown)
+    this.progBlur = createProgram(gl, FULLSCREEN_VS, BLUR_FS)
+    this.uBlur = new Uniforms(gl, this.progBlur)
+    this.progUp = createProgram(gl, FULLSCREEN_VS, UPSAMPLE_FS)
+    this.uUp = new Uniforms(gl, this.progUp)
+    this.progComposite = createProgram(gl, FULLSCREEN_VS, COMPOSITE_FS)
+    this.uComposite = new Uniforms(gl, this.progComposite)
+
+    this.additive = new SpriteBatch(gl, 4096)
+    this.core = new SpriteBatch(gl, 256)
+
+    const vao = gl.createVertexArray()
+    if (!vao) throw new Error('Allocation GPU impossible')
+    this.fullscreenVao = vao
+
+    gl.disable(gl.DEPTH_TEST)
+    gl.enable(gl.BLEND)
+    gl.clearColor(0, 0, 0, 1)
+  }
+
+  get pixelWidth(): number {
+    return this.width
+  }
+
+  get pixelHeight(): number {
+    return this.height
+  }
+
+  resize(width: number, height: number): void {
+    const w = Math.max(1, Math.floor(width))
+    const h = Math.max(1, Math.floor(height))
+    if (w === this.width && h === this.height) return
+    this.width = w
+    this.height = h
+    this.canvas.width = w
+    this.canvas.height = h
+
+    const gl = this.gl
+    if (this.scene) {
+      disposeRenderTarget(gl, this.scene)
+      this.bloomA.forEach((t) => disposeRenderTarget(gl, t))
+      this.bloomB.forEach((t) => disposeRenderTarget(gl, t))
+    }
+    this.bloomA = []
+    this.bloomB = []
+
+    this.scene = createRenderTarget(gl, w, h, this.fmt)
+    let bw = Math.max(1, w >> 1)
+    let bh = Math.max(1, h >> 1)
+    for (let i = 0; i < BLOOM_LEVELS; i++) {
+      this.bloomA.push(createRenderTarget(gl, bw, bh, this.fmt))
+      this.bloomB.push(createRenderTarget(gl, bw, bh, this.fmt))
+      bw = Math.max(1, bw >> 1)
+      bh = Math.max(1, bh >> 1)
+    }
+  }
+
+  resetTrail(): void {
+    this.trailCount = 0
+  }
+
+  private updateTrail(x: number, y: number): void {
+    if (this.trailCount > 0) {
+      const lastX = this.trailX[this.trailCount - 1]
+      const lastY = this.trailY[this.trailCount - 1]
+      if (Math.hypot(x - lastX, y - lastY) < 3) return
+    }
+    if (this.trailCount === TRAIL_LENGTH) {
+      this.trailX.copyWithin(0, 1)
+      this.trailY.copyWithin(0, 1)
+      this.trailCount--
+    }
+    this.trailX[this.trailCount] = x
+    this.trailY[this.trailCount] = y
+    this.trailCount++
+  }
+
+  render(world: World, settings: RenderSettings = DEFAULT_RENDER_SETTINGS): void {
+    const gl = this.gl
+    const w = this.width
+    const h = this.height
+
+    const view = computeView(w, h)
+    const scale = view.scale
+    const shake = world.shake
+    const shakeX = Math.sin(world.time * 97) * shake * 14
+    const shakeY = Math.cos(world.time * 113) * shake * 14
+    const originX = view.originX + shakeX
+    const originY = view.originY + shakeY
+
+    if (world.phase !== 'over' || world.winner === null) this.updateTrail(world.ball.x, world.ball.y)
+
+    // ---------- Passe scène ----------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.scene.framebuffer)
+    gl.viewport(0, 0, w, h)
+    gl.disable(gl.BLEND)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+
+    this.drawBackground(world, originX, originY, scale)
+    this.drawEntities(world, originX, originY, scale)
+
+    // ---------- Bloom ----------
+    this.runBloom()
+
+    // ---------- Composite ----------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, w, h)
+    gl.disable(gl.BLEND)
+    gl.useProgram(this.progComposite)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, this.scene.texture)
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, this.bloomA[0].texture)
+    this.uComposite.i('u_scene', 0)
+    this.uComposite.i('u_bloom', 1)
+    this.uComposite.v2('u_resolution', w, h)
+    this.uComposite.f('u_time', world.time)
+    this.uComposite.f('u_bloomIntensity', settings.bloomIntensity)
+    this.uComposite.f('u_chromatic', settings.chromatic)
+    this.uComposite.f('u_vignette', settings.vignette)
+    this.uComposite.f('u_scanlines', settings.scanlines)
+    this.uComposite.f('u_grain', settings.grain)
+    this.drawFullscreen()
+  }
+
+  private drawBackground(world: World, originX: number, originY: number, scale: number): void {
+    const gl = this.gl
+    gl.useProgram(this.progBg)
+    this.uBg.v2('u_resolution', this.width, this.height)
+    this.uBg.v2('u_origin', originX, originY)
+    this.uBg.f('u_scale', scale)
+    this.uBg.v2('u_field', FIELD_WIDTH, FIELD_HEIGHT)
+    this.uBg.f('u_time', world.time)
+    this.uBg.v3('u_playerColor', world.playerColor[0], world.playerColor[1], world.playerColor[2])
+    this.uBg.v3('u_aiColor', world.aiColor[0], world.aiColor[1], world.aiColor[2])
+    this.uBg.f('u_flash', world.flash)
+    this.drawFullscreen()
+  }
+
+  private drawEntities(world: World, originX: number, originY: number, scale: number): void {
+    const gl = this.gl
+    const player = world.player
+    const ai = world.ai
+    const ball = world.ball
+
+    gl.useProgram(this.progSprite)
+    this.uSprite.v2('u_resolution', this.width, this.height)
+    this.uSprite.v2('u_origin', originX, originY)
+    this.uSprite.f('u_scale', scale)
+
+    // ---- Passe additive : halos, traînée, particules ----
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE)
+    this.additive.begin()
+
+    // Traînée de la balle
+    if (this.trailCount > 1) {
+      for (let i = 0; i < this.trailCount - 1; i++) {
+        const t = i / Math.max(1, this.trailCount - 1)
+        const x0 = this.trailX[i]
+        const y0 = this.trailY[i]
+        const x1 = this.trailX[i + 1]
+        const y1 = this.trailY[i + 1]
+        const dx = x1 - x0
+        const dy = y1 - y0
+        const len = Math.hypot(dx, dy)
+        if (len < 0.001) continue
+        const color = mix3(world.playerColor, world.aiColor, clamp(x0 / FIELD_WIDTH, 0, 1))
+        const thickness = lerp(1.5, 9, t * t)
+        const alpha = lerp(0.05, 0.55, t)
+        this.additive.push(
+          (x0 + x1) * 0.5,
+          (y0 + y1) * 0.5,
+          len * 0.5 + thickness * 0.5,
+          thickness * 0.5,
+          color[0],
+          color[1],
+          color[2],
+          alpha,
+          SPRITE_ROUNDBOX,
+          thickness * 0.5,
+          Math.atan2(dy, dx),
+          1.4,
+        )
+      }
+    }
+
+    // Halos des paddles
+    this.pushGlow(player.x, player.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.playerColor, 0.34)
+    this.pushGlow(ai.x, ai.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34)
+
+    // Particules
+    const particles = world.particles
+    for (let i = 0; i < particles.count; i++) {
+      const life = particles.life[i] / Math.max(particles.maxLife[i], 0.0001)
+      const kind = particles.kind[i]
+      if (kind === 2) continue
+      const size = particles.size[i] * (0.35 + life * 0.9)
+      this.additive.push(
+        particles.x[i],
+        particles.y[i],
+        size,
+        size,
+        particles.r[i],
+        particles.g[i],
+        particles.b[i],
+        life * 0.9,
+        kind === 1 ? SPRITE_GLOW : SPRITE_CIRCLE,
+        size * 0.35,
+        0,
+        1.6,
+      )
+    }
+
+    this.additive.flush()
+
+    // ---- Passe opaque (alpha pré-multipliée) : formes principales ----
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    this.core.begin()
+
+    this.pushPaddle(player, world.playerColor, world.paddleFlashPlayer)
+    this.pushPaddle(ai, world.aiColor, world.paddleFlashAi)
+
+    const ballColor = mix3(world.playerColor, world.aiColor, clamp(ball.x / FIELD_WIDTH, 0, 1))
+    const hot: [number, number, number] = [
+      lerp(ballColor[0], 1, 0.62),
+      lerp(ballColor[1], 1, 0.62),
+      lerp(ballColor[2], 1, 0.62),
+    ]
+    this.core.push(
+      ball.x,
+      ball.y,
+      ball.r,
+      ball.r,
+      hot[0],
+      hot[1],
+      hot[2],
+      1,
+      3,
+      ball.r,
+      0,
+      2.1,
+    )
+
+    // Confettis
+    for (let i = 0; i < particles.count; i++) {
+      if (particles.kind[i] !== 2) continue
+      const life = particles.life[i] / Math.max(particles.maxLife[i], 0.0001)
+      const size = particles.size[i]
+      this.core.push(
+        particles.x[i],
+        particles.y[i],
+        size,
+        size * 0.55,
+        particles.r[i],
+        particles.g[i],
+        particles.b[i],
+        clamp(life, 0, 1),
+        SPRITE_ROUNDBOX,
+        size * 0.22,
+        particles.x[i] * 0.01 + world.time * 3,
+        1.2,
+      )
+    }
+
+    this.core.flush()
+    gl.disable(gl.BLEND)
+  }
+
+  private pushGlow(
+    x: number,
+    y: number,
+    halfW: number,
+    halfH: number,
+    color: readonly [number, number, number],
+    alpha: number,
+  ): void {
+    this.additive.push(
+      x,
+      y,
+      halfW,
+      halfH,
+      color[0],
+      color[1],
+      color[2],
+      alpha,
+      SPRITE_GLOW,
+      0,
+      0,
+      1.1,
+    )
+  }
+
+  private pushPaddle(
+    paddle: { x: number; y: number; height: number },
+    color: readonly [number, number, number],
+    flash: number,
+  ): void {
+    const halfW = PADDLE_WIDTH / 2
+    const halfH = paddle.height / 2
+    const boost = 1.7 + flash * 1.6
+    this.core.push(
+      paddle.x,
+      paddle.y,
+      halfW,
+      halfH,
+      color[0],
+      color[1],
+      color[2],
+      1,
+      3,
+      PADDLE_WIDTH / 2,
+      0,
+      boost,
+    )
+  }
+
+  private runBloom(): void {
+    const gl = this.gl
+
+    // Bright pass
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.bloomA[0].framebuffer)
+    gl.viewport(0, 0, this.bloomA[0].width, this.bloomA[0].height)
+    gl.disable(gl.BLEND)
+    gl.useProgram(this.progBright)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, this.scene.texture)
+    this.uBright.i('u_texture', 0)
+    this.uBright.f('u_threshold', 0.72)
+    this.uBright.f('u_knee', 0.45)
+    this.drawFullscreen()
+
+    // Downsample + blur par niveau
+    for (let i = 1; i < BLOOM_LEVELS; i++) {
+      const src = this.bloomA[i - 1]
+      const dst = this.bloomA[i]
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst.framebuffer)
+      gl.viewport(0, 0, dst.width, dst.height)
+      gl.useProgram(this.progDown)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, src.texture)
+      this.uDown.i('u_texture', 0)
+      this.uDown.v2('u_texel', 1 / src.width, 1 / src.height)
+      this.drawFullscreen()
+    }
+
+    for (let i = 0; i < BLOOM_LEVELS; i++) {
+      const target = this.bloomA[i]
+      const temp = this.bloomB[i]
+      gl.useProgram(this.progBlur)
+      gl.activeTexture(gl.TEXTURE0)
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, temp.framebuffer)
+      gl.viewport(0, 0, temp.width, temp.height)
+      gl.bindTexture(gl.TEXTURE_2D, target.texture)
+      this.uBlur.i('u_texture', 0)
+      this.uBlur.v2('u_direction', 1 / target.width, 0)
+      this.drawFullscreen()
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer)
+      gl.viewport(0, 0, target.width, target.height)
+      gl.bindTexture(gl.TEXTURE_2D, temp.texture)
+      this.uBlur.v2('u_direction', 0, 1 / target.height)
+      this.drawFullscreen()
+    }
+
+    // Upsample additif du plus petit vers le plus grand
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE)
+    gl.useProgram(this.progUp)
+    gl.activeTexture(gl.TEXTURE0)
+    for (let i = BLOOM_LEVELS - 2; i >= 0; i--) {
+      const src = this.bloomA[i + 1]
+      const dst = this.bloomA[i]
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst.framebuffer)
+      gl.viewport(0, 0, dst.width, dst.height)
+      gl.bindTexture(gl.TEXTURE_2D, src.texture)
+      this.uUp.i('u_texture', 0)
+      this.uUp.v2('u_texel', 1 / src.width, 1 / src.height)
+      this.uUp.f('u_intensity', 0.85)
+      this.drawFullscreen()
+    }
+    gl.disable(gl.BLEND)
+  }
+
+  private drawFullscreen(): void {
+    const gl = this.gl
+    gl.bindVertexArray(this.fullscreenVao)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.bindVertexArray(null)
+  }
+
+  dispose(): void {
+    const gl = this.gl
+    this.additive.dispose()
+    this.core.dispose()
+    if (this.scene) {
+      disposeRenderTarget(gl, this.scene)
+      this.bloomA.forEach((t) => disposeRenderTarget(gl, t))
+      this.bloomB.forEach((t) => disposeRenderTarget(gl, t))
+    }
+    gl.deleteVertexArray(this.fullscreenVao)
+    gl.deleteProgram(this.progSprite)
+    gl.deleteProgram(this.progBg)
+    gl.deleteProgram(this.progBright)
+    gl.deleteProgram(this.progDown)
+    gl.deleteProgram(this.progBlur)
+    gl.deleteProgram(this.progUp)
+    gl.deleteProgram(this.progComposite)
+  }
+}
