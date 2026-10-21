@@ -14,9 +14,12 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
   const localScore = localIsLeft ? state.scorePlayer : state.scoreAi
   const otherScore = localIsLeft ? state.scoreAi : state.scorePlayer
   const won = localScore > otherScore
-  const accent = won
-    ? rgbToCss(hsvToRgb(state.color.h, state.color.s, state.color.v))
-    : rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v))
+  const draw = state.draw || localScore === otherScore
+  const accent = draw
+    ? '#a1a1aa'
+    : won
+      ? rgbToCss(hsvToRgb(state.color.h, state.color.s, state.color.v))
+      : rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v))
 
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#05060a]/60 p-4 backdrop-blur-md">
@@ -28,10 +31,10 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
           className="mt-3 text-4xl font-extrabold tracking-tight"
           style={{ color: accent, textShadow: `0 0 22px ${accent}99, 0 0 60px ${accent}44` }}
         >
-          {won ? 'Victoire' : 'Défaite'}
+          {draw ? 'Égalité' : won ? 'Victoire' : 'Défaite'}
         </h2>
         <p className="mt-2 text-xs tracking-[0.3em] text-zinc-500 uppercase">
-          {won ? 'Match gagné' : 'Match perdu'}
+          {draw ? 'Match nul' : won ? 'Match gagné' : 'Match perdu'}
         </p>
 
         <div className="font-mono-game mt-6 flex items-center justify-center gap-5 text-4xl font-bold">

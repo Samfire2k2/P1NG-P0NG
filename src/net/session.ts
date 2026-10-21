@@ -36,6 +36,12 @@ export interface NetSnapshot {
   eventSide: number
   eventPower: number
   eventOffset: number
+  /** Temps restant en mode « temps » ; -1 sinon. */
+  timeLeft: number
+  /** Raquette propriétaire de la balle : -1 = aucune, 0 = gauche, 1 = droite. */
+  ballOwner: number
+  /** Vainqueur : 0 = gauche, 1 = droite, 2 = égalité. */
+  winner: number
 }
 
 /** Effets sonores relayés par l'hôte vers l'invité. */
@@ -48,6 +54,7 @@ export const NET_EVENT = {
   COUNTDOWN: 5,
   WIN: 6,
   LOSE: 7,
+  DRAW: 8,
 } as const
 
 /** Profil du joueur transmis à l'adversaire (pseudo + couleur). */
@@ -58,7 +65,7 @@ export interface NetMeta {
   v: number
 }
 
-const SNAPSHOT_FLOATS = 16
+const SNAPSHOT_FLOATS = 19
 const SNAPSHOT_BYTES = SNAPSHOT_FLOATS * 4
 
 export interface NetSessionHandlers {
@@ -268,6 +275,9 @@ export class NetSession {
       eventSide: view[13],
       eventPower: view[14],
       eventOffset: view[15],
+      timeLeft: view[16],
+      ballOwner: view[17],
+      winner: view[18],
     })
   }
 
@@ -291,6 +301,9 @@ export class NetSession {
     view[13] = snapshot.eventSide
     view[14] = snapshot.eventPower
     view[15] = snapshot.eventOffset
+    view[16] = snapshot.timeLeft
+    view[17] = snapshot.ballOwner
+    view[18] = snapshot.winner
     void this.stateAction.send(this.snapshotBytes.slice(), { target: this.peerId })
   }
 

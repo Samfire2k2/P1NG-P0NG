@@ -9,6 +9,7 @@ import {
   FIELD_WIDTH,
   FIXED_DT,
   PADDLE_WIDTH,
+  ROUND_DURATION,
 } from '../src/game/constants.ts'
 import { World } from '../src/game/world.ts'
 
@@ -209,6 +210,127 @@ console.log('\n— Ordre de difficulté de l’IA —')
   check(exp.returned >= fac.returned, "l'expert renvoie au moins autant que le facile")
   check(moyen.returned > 0, 'le niveau moyen renvoie une partie des balles')
   check(fac.returned <= moyen.returned, 'le facile laisse passer plus de balles que le moyen')
+}
+
+console.log('\n— Round chronométré —')
+{
+  const w = new World()
+  w.setSeed(4242)
+  w.format = 'time'
+  w.reset(11)
+  w.frozen = false
+  w.phase = 'play'
+  check(w.timeLeft === ROUND_DURATION, `le round démarre avec ${ROUND_DURATION} s`)
+
+  // Balle qui ne sort pas du terrain verticalement : aucun point possible.
+  w.ball.x = FIELD_WIDTH / 2
+  w.ball.y = FIELD_HEIGHT / 2
+  w.ball.vx = 0
+  w.ball.vy = 600
+  w.ball.speed = 600
+  w.scorePlayer = 5
+  w.scoreAi = 2
+  w.timeLeft = 0.4
+  for (let i = 0; i < 240; i++) {
+    w.step(FIXED_DT)
+    w.drainEvents()
+  }
+  check(w.phase === 'over', 'le round s’arrête quand le chronomètre tombe à zéro')
+  check(w.timeLeft === 0, 'le chronomètre affiche zéro')
+  check(w.winner === 'player' && !w.draw, 'le meilleur score gagne à la fin du round')
+}
+{
+  const w = new World()
+  w.format = 'time'
+  w.reset(11)
+  w.frozen = false
+  w.phase = 'play'
+  w.ball.x = FIELD_WIDTH / 2
+  w.ball.y = FIELD_HEIGHT / 2
+  w.ball.vx = 0
+  w.ball.vy = 600
+  w.ball.speed = 600
+  w.scorePlayer = 3
+  w.scoreAi = 3
+  w.timeLeft = 0.3
+  for (let i = 0; i < 240; i++) {
+    w.step(FIXED_DT)
+    w.drainEvents()
+  }
+  check(w.phase === 'over' && w.draw && w.winner === null, 'une égalité à la fin du round est signalée')
+}
+{
+  // En mode « temps », atteindre le nombre de points ne termine pas la manche.
+  const w = new World()
+  w.format = 'time'
+  w.reset(11)
+  w.frozen = false
+  w.phase = 'play'
+  w.scorePlayer = 10
+  w.ball.x = FIELD_WIDTH + 20
+  w.ball.vx = 400
+  w.ball.vy = 0
+  w.ball.speed = 400
+  w.step(FIXED_DT)
+  w.drainEvents()
+  check(w.scorePlayer === 11, 'le point est compté')
+  check(w.phase !== 'over', 'en mode temps, atteindre la cible ne termine pas la manche')
+}
+{
+  // En mode « points », le chronomètre est désactivé.
+  const w = new World()
+  w.reset(11)
+  check(w.timeLeft === -1, 'le mode points n’a pas de chronomètre')
+}
+
+console.log('\n— Couleur de la balle —')
+{
+  const w = new World()
+  w.setSeed(11)
+  w.reset(11)
+  w.frozen = false
+  w.phase = 'play'
+  check(w.ball.owner === -1, 'la balle n’a de propriétaire qu’après un contact')
+
+  w.ball.x = w.player.x + 8
+  w.ball.y = w.player.y
+  w.ball.vx = -700
+  w.ball.vy = 0
+  w.ball.speed = 700
+  w.step(FIXED_DT)
+  w.drainEvents()
+  check(w.ball.owner === 0, 'la balle prend la couleur de la raquette de gauche')
+
+  w.ball.x = w.ai.x - 8
+  w.ball.y = w.ai.y
+  w.ball.vx = 700
+  w.ball.vy = 0
+  w.ball.speed = 700
+  w.step(FIXED_DT)
+  w.drainEvents()
+  check(w.ball.owner === 1, 'la balle prend la couleur de la raquette de droite')
+}
+
+console.log('\n— Écho du terrain —')
+{
+  const w = new World()
+  w.reset(11)
+  w.frozen = false
+  w.phase = 'play'
+  check(w.gridPulse === 0, 'la grille est au repos au départ')
+  w.ball.x = FIELD_WIDTH + 20
+  w.ball.vx = 400
+  w.ball.vy = 0
+  w.ball.speed = 400
+  w.step(FIXED_DT)
+  w.drainEvents()
+  check(w.gridPulse > 0.5, 'un point déclenche une impulsion de la grille')
+  const pulse = w.gridPulse
+  for (let i = 0; i < 240; i++) {
+    w.step(FIXED_DT)
+    w.drainEvents()
+  }
+  check(w.gridPulse < pulse, 'l’impulsion de la grille s’amortit')
 }
 
 console.log('')

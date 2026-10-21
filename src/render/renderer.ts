@@ -4,6 +4,7 @@ import {
   PADDLE_HEIGHT,
   PADDLE_WIDTH,
   TRAIL_LENGTH,
+  TRAIL_LIFE,
 } from '../game/constants'
 import { clamp, lerp } from '../game/math'
 import type { World } from '../game/world'
@@ -59,6 +60,20 @@ const mix3 = (
 ]
 
 /**
+ * Couleur de la balle : celle de la raquette qui l'a frappée en dernier.
+ * Au service, elle reste neutre.
+ */
+const ballColorOf = (world: World): [number, number, number] => {
+  if (world.ball.owner === 0) {
+    return [world.playerColor[0], world.playerColor[1], world.playerColor[2]]
+  }
+  if (world.ball.owner === 1) {
+    return [world.aiColor[0], world.aiColor[1], world.aiColor[2]]
+  }
+  return [0.95, 0.97, 1]
+}
+
+/**
  * Renderer WebGL2 : sprites instanciés + chaîne de bloom (pyramide) + composite
  * (aberration chromatique, tone mapping ACES, vignette, scanlines, grain).
  */
@@ -95,7 +110,12 @@ export class Renderer {
 
   private trailX = new Float32Array(TRAIL_LENGTH)
   private trailY = new Float32Array(TRAIL_LENGTH)
+  private trailR = new Float32Array(TRAIL_LENGTH)
+  private trailG = new Float32Array(TRAIL_LENGTH)
+  private trailB = new Float32Array(TRAIL_LENGTH)
+  private trailTime = new Float32Array(TRAIL_LENGTH)
   private trailCount = 0
+  private trailHead = 0
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -179,21 +199,40 @@ export class Renderer {
 
   resetTrail(): void {
     this.trailCount = 0
+    this.trailHead = 0
   }
 
-  private updateTrail(x: number, y: number): void {
-    if (this.trailCount > 0) {
-      const lastX = this.trailX[this.trailCount - 1]
-      const lastY = this.trailY[this.trailCount - 1]
-      if (Math.hypot(x - lastX, y - lastY) < 3) return
-    }
-    if (this.trailCount === TRAIL_LENGTH) {
-      this.trailX.copyWithin(0, 1)
-      this.trailY.copyWithin(0, 1)
+  /**
+   * Ajoute un échantillon de traînée. Le sillage ne disparaît pas d'un coup :
+   * chaque échantillon conserve sa couleur puis s'efface (TRAIL_LIFE).
+   */
+  private updateTrail(
+    x: number,
+    y: number,
+    color: readonly [number, number, number],
+    now: number,
+  ): void {
+    // Purge des échantillons trop vieux
+    while (this.trailCount > 0) {
+      if (now - this.trailTime[this.trailHead] <= TRAIL_LIFE) break
+      this.trailHead = (this.trailHead + 1) % TRAIL_LENGTH
       this.trailCount--
     }
-    this.trailX[this.trailCount] = x
-    this.trailY[this.trailCount] = y
+    if (this.trailCount > 0) {
+      const last = (this.trailHead + this.trailCount - 1) % TRAIL_LENGTH
+      if (Math.hypot(x - this.trailX[last], y - this.trailY[last]) < 4) return
+    }
+    if (this.trailCount === TRAIL_LENGTH) {
+      this.trailHead = (this.trailHead + 1) % TRAIL_LENGTH
+      this.trailCount--
+    }
+    const idx = (this.trailHead + this.trailCount) % TRAIL_LENGTH
+    this.trailX[idx] = x
+    this.trailY[idx] = y
+    this.trailR[idx] = color[0]
+    this.trailG[idx] = color[1]
+    this.trailB[idx] = color[2]
+    this.trailTime[idx] = now
     this.trailCount++
   }
 
@@ -210,7 +249,9 @@ export class Renderer {
     const originX = view.originX + shakeX
     const originY = view.originY + shakeY
 
-    if (world.phase !== 'over' || world.winner === null) this.updateTrail(world.ball.x, world.ball.y)
+    if (world.phase !== 'over' || world.winner === null) {
+      this.updateTrail(world.ball.x, world.ball.y, ballColorOf(world), world.time)
+    }
 
     // ---------- Passe scène ----------
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.scene.framebuffer)
@@ -256,6 +297,14 @@ export class Renderer {
     this.uBg.v3('u_playerColor', world.playerColor[0], world.playerColor[1], world.playerColor[2])
     this.uBg.v3('u_aiColor', world.aiColor[0], world.aiColor[1], world.aiColor[2])
     this.uBg.f('u_flash', world.flash)
+    // Écho du terrain : la grille prend la teinte du joueur qui mène et
+    // pulse à chaque point marqué.
+    const diff = world.scorePlayer - world.scoreAi
+    const lead = Math.min(1, Math.abs(diff) / 3)
+    const leadColor = diff >= 0 ? world.playerColor : world.aiColor
+    this.uBg.f('u_lead', lead)
+    this.uBg.v3('u_leadColor', leadColor[0], leadColor[1], leadColor[2])
+    this.uBg.f('u_gridPulse', world.gridPulse)
     this.drawFullscreen()
   }
 
@@ -275,21 +324,31 @@ export class Renderer {
     gl.blendFunc(gl.ONE, gl.ONE)
     this.additive.begin()
 
-    // Traînée de la balle
+    // Traînée de la balle : dégradé de couleur le long du sillage.
     if (this.trailCount > 1) {
-      for (let i = 0; i < this.trailCount - 1; i++) {
-        const t = i / Math.max(1, this.trailCount - 1)
-        const x0 = this.trailX[i]
-        const y0 = this.trailY[i]
-        const x1 = this.trailX[i + 1]
-        const y1 = this.trailY[i + 1]
+      const last = this.trailCount - 1
+      for (let k = 0; k < last; k++) {
+        const i0 = (this.trailHead + k) % TRAIL_LENGTH
+        const i1 = (this.trailHead + k + 1) % TRAIL_LENGTH
+        const x0 = this.trailX[i0]
+        const y0 = this.trailY[i0]
+        const x1 = this.trailX[i1]
+        const y1 = this.trailY[i1]
         const dx = x1 - x0
         const dy = y1 - y0
         const len = Math.hypot(dx, dy)
         if (len < 0.001) continue
-        const color = mix3(world.playerColor, world.aiColor, clamp(x0 / FIELD_WIDTH, 0, 1))
-        const thickness = lerp(1.5, 9, t * t)
-        const alpha = lerp(0.05, 0.55, t)
+        const t = k / last
+        const age = clamp((world.time - this.trailTime[i0]) / TRAIL_LIFE, 0, 1)
+        // Couleur : mélange des deux échantillons voisins, donc dégradé continu
+        // le long du sillage (il change quand la balle change de propriétaire).
+        const color = mix3(
+          [this.trailR[i0], this.trailG[i0], this.trailB[i0]],
+          [this.trailR[i1], this.trailG[i1], this.trailB[i1]],
+          0.5,
+        )
+        const thickness = lerp(1.5, 9, t * t) * (1 - age * 0.55)
+        const alpha = lerp(0.06, 0.6, t) * (1 - age) * (1 - age)
         this.additive.push(
           (x0 + x1) * 0.5,
           (y0 + y1) * 0.5,
@@ -310,6 +369,10 @@ export class Renderer {
     // Halos des paddles
     this.pushGlow(player.x, player.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.playerColor, 0.34)
     this.pushGlow(ai.x, ai.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34)
+
+    // Halo de la balle : il prend la couleur de la raquette qui l'a frappée
+    const ballTint = ballColorOf(world)
+    this.pushGlow(ball.x, ball.y, ball.r * 3.4, ball.r * 3.4, ballTint, 0.4)
 
     // Particules
     const particles = world.particles
@@ -343,7 +406,8 @@ export class Renderer {
     this.pushPaddle(player, world.playerColor, world.paddleFlashPlayer)
     this.pushPaddle(ai, world.aiColor, world.paddleFlashAi)
 
-    const ballColor = mix3(world.playerColor, world.aiColor, clamp(ball.x / FIELD_WIDTH, 0, 1))
+    // La balle porte la couleur de la raquette qui l'a frappée.
+    const ballColor = ballColorOf(world)
     const hot: [number, number, number] = [
       lerp(ballColor[0], 1, 0.62),
       lerp(ballColor[1], 1, 0.62),

@@ -202,11 +202,16 @@ export class AudioEngine {
     src.stop(t0 + dur + 0.02)
   }
 
-  /** Impact de paddle : "thock" + transposition selon le point touché. */
+  /**
+   * Impact de paddle : "thock" + transposition selon la zone touchée.
+   * `offset` vaut 0 au centre de la raquette et 1 (ou -1) aux extrémités :
+   * plus on frappe près du bord, plus le son est aigu et métallique.
+   */
   paddleHit(offset: number, power: number, isPlayer: boolean): void {
     if (!this.ctx || this.muted) return
     const base = isPlayer ? 300 : 240
-    const freq = base * (1 + Math.abs(offset) * 0.55)
+    const edge = Math.abs(offset)
+    const freq = base * (1 + edge * 1.15)
     this.tone(freq, 0.13, {
       type: 'triangle',
       gain: 0.16 + power * 0.1,
@@ -215,6 +220,13 @@ export class AudioEngine {
     })
     this.tone(freq * 2.02, 0.08, { type: 'square', gain: 0.05 + power * 0.04, sweepTo: freq * 1.2 })
     this.noise(0.09, { gain: 0.1 + power * 0.07, freq: 1400 + power * 1600, q: 0.9, sweepTo: 420 })
+
+    // Extrémité de la raquette : claquement sec, de plus en plus présent.
+    if (edge > 0.55) {
+      const bite = (edge - 0.55) / 0.45
+      this.tone(freq * 3.01, 0.05, { type: 'square', gain: 0.03 + bite * 0.05, sweepTo: freq * 3.7 })
+      this.noise(0.04, { gain: 0.02 + bite * 0.05, freq: 4600 + bite * 2400, q: 2.4, sweepTo: 2200 })
+    }
   }
 
   wallHit(power: number): void {
@@ -257,6 +269,16 @@ export class AudioEngine {
     const notes = [523.25, 415.3, 349.23, 261.63]
     notes.forEach((f, i) => {
       this.tone(f, 0.4, { type: 'sine', gain: 0.13, delay: i * 0.12 })
+    })
+  }
+
+  /** Match nul : deux notes plates, sans victoire ni défaite. */
+  draw(): void {
+    if (!this.ctx || this.muted) return
+    const notes = [392, 392, 349.23]
+    notes.forEach((f, i) => {
+      this.tone(f, 0.34, { type: 'triangle', gain: 0.11, delay: i * 0.12, attack: 0.01 })
+      this.tone(f * 2, 0.2, { type: 'sine', gain: 0.04, delay: i * 0.12 })
     })
   }
 

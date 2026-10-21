@@ -15,8 +15,10 @@ import {
   PLAYER_MAX_SPEED,
   AI_MARGIN,
   POINT_PAUSE,
+  ROUND_DURATION,
   SPIN_TRANSFER,
   type Difficulty,
+  type MatchFormat,
 } from './constants'
 import { clamp, createRng, randRange, TAU } from './math'
 import { ParticleSystem } from './particles'
@@ -33,6 +35,7 @@ export type GameEventType =
   | 'serve'
   | 'win'
   | 'lose'
+  | 'draw'
   | 'pointEnd'
 
 export interface GameEvent {
@@ -60,6 +63,11 @@ export interface Ball {
   vy: number
   r: number
   speed: number
+  /**
+   * Raquette qui a frappé la balle en dernier : 0 = gauche, 1 = droite,
+   * -1 = aucune (au service). La balle prend la couleur de son propriétaire.
+   */
+  owner: number
 }
 
 export interface AiState {
@@ -86,6 +94,12 @@ export class World {
   scorePlayer = 0
   scoreAi = 0
   target = 11
+  /** Format de la manche en cours. */
+  format: MatchFormat = 'points'
+  /** Temps restant en mode « temps » ; -1 quand la manche n'est pas chronométrée. */
+  timeLeft = -1
+  /** La manche s'est terminée sur une égalité. */
+  draw = false
 
   serveTimer = 0
   serveTo: Side = 'player'
@@ -98,6 +112,8 @@ export class World {
   flash = 0
   paddleFlashPlayer = 0
   paddleFlashAi = 0
+  /** Impulsion de la grille : déclenchée à chaque point, amortie dans le temps. */
+  gridPulse = 0
 
   particles = new ParticleSystem()
   events: GameEvent[] = []
@@ -121,7 +137,7 @@ export class World {
   constructor() {
     this.player = { x: PLAYER_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.playerColor }
     this.ai = { x: FIELD_WIDTH - AI_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.aiColor }
-    this.ball = { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED }
+    this.ball = { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }
   }
 
   setSeed(seed: number): void {
@@ -153,6 +169,8 @@ export class World {
     this.scorePlayer = 0
     this.scoreAi = 0
     this.target = target
+    this.timeLeft = this.format === 'time' ? ROUND_DURATION : -1
+    this.draw = false
     this.winner = null
     this.lastScorer = null
     this.player.y = FIELD_HEIGHT / 2
@@ -167,6 +185,7 @@ export class World {
     this.particles.clear()
     this.shake = 0
     this.flash = 0
+    this.gridPulse = 0
     this.parkBall()
     this.countdown = 2
     this.countdownStep = 0
@@ -180,6 +199,7 @@ export class World {
     this.ball.vx = 0
     this.ball.vy = 0
     this.ball.speed = BALL_START_SPEED
+    this.ball.owner = -1
   }
 
   private push(ev: GameEvent): void {
@@ -202,6 +222,7 @@ export class World {
     this.flash = Math.max(0, this.flash - dt * 3.6)
     this.paddleFlashPlayer = Math.max(0, this.paddleFlashPlayer - dt * 4)
     this.paddleFlashAi = Math.max(0, this.paddleFlashAi - dt * 4)
+    this.gridPulse = Math.max(0, this.gridPulse - dt * 0.85)
 
     if (!this.playerRemote) this.updatePlayer(dt)
     if (this.aiRemote) this.updateNetPaddle(dt)
@@ -227,6 +248,34 @@ export class World {
     }
 
     this.particles.update(dt)
+    this.updateClock(dt)
+  }
+
+  /**
+   * Chronomètre de manche : ne décompte pas pendant les services (la balle est
+   * garée) et met fin à la partie à zéro.
+   */
+  private updateClock(dt: number): void {
+    if (this.format !== 'time' || this.phase === 'over') return
+    if (this.phase !== 'serve') {
+      this.timeLeft = Math.max(0, this.timeLeft - dt)
+    }
+    if (this.timeLeft <= 0) this.endByTime()
+  }
+
+  /** Fin de manche au terme du chronomètre : le meilleur score gagne. */
+  private endByTime(): void {
+    this.timeLeft = 0
+    this.phase = 'over'
+    if (this.scorePlayer === this.scoreAi) {
+      this.winner = null
+      this.draw = true
+      this.push({ type: 'draw' })
+      return
+    }
+    this.winner = this.scorePlayer > this.scoreAi ? 'player' : 'ai'
+    this.draw = false
+    this.push({ type: this.winner === 'player' ? 'win' : 'lose', side: this.winner })
   }
 
   private updatePlayer(dt: number): void {
@@ -340,6 +389,9 @@ export class World {
     if (p === this.player) this.paddleFlashPlayer = 1
     else this.paddleFlashAi = 1
 
+    // La balle prend la couleur de la raquette qui vient de la frapper.
+    b.owner = p === this.player ? 0 : 1
+
     this.particles.impact(b.x - dir * b.r, b.y, -dir, 0, p.color, power)
     this.push({
       type: 'paddleHit',
@@ -372,6 +424,7 @@ export class World {
     this.serveTimer = POINT_PAUSE
     this.shake = 1
     this.flash = 1
+    this.gridPulse = 1
 
     const color = scorer === 'player' ? this.playerColor : this.aiColor
     const x = scorer === 'player' ? FIELD_WIDTH + 20 : -20
@@ -385,8 +438,11 @@ export class World {
 
     this.push({ type: 'score', side: scorer, value: scorer === 'player' ? this.scorePlayer : this.scoreAi })
 
-    if (this.scorePlayer >= this.target || this.scoreAi >= this.target) {
+    // En mode « points » la manche s'arrête dès que la cible est atteinte ;
+    // en mode « temps » seul le chronomètre décide.
+    if (this.format === 'points' && (this.scorePlayer >= this.target || this.scoreAi >= this.target)) {
       this.phase = 'over'
+      this.draw = false
       this.winner = this.scorePlayer > this.scoreAi ? 'player' : 'ai'
       this.push({ type: this.winner === 'player' ? 'win' : 'lose', side: this.winner })
     }

@@ -10,6 +10,7 @@
  */
 
 import { audio } from './audio'
+import { clamp } from './math'
 
 export type MusicTrack = 'menu' | 'game'
 
@@ -89,6 +90,9 @@ class MusicEngine {
   private target: MusicTrack = 'menu'
   private switchTimer = 0
   private level = 0.42
+  /** Tension de jeu : 0 = calme, 1 = score serré. */
+  private tension = 0
+  private switching = false
 
   /** Change de piste (fondu sortant puis entrée). */
   setTrack(track: MusicTrack): void {
@@ -98,6 +102,31 @@ class MusicEngine {
     }
     this.target = track
     this.startSwitch()
+  }
+
+  /**
+   * Monte la tension musicale : le moteur l'appelle selon l'écart au score
+   * et le temps restant. La partie serrée pousse les aigus et la batterie.
+   */
+  setTension(tension: number): void {
+    const value = clamp(tension, 0, 1)
+    if (Math.abs(value - this.tension) < 0.01) return
+    this.tension = value
+    this.applyTension()
+  }
+
+  get currentTension(): number {
+    return this.tension
+  }
+
+  /** Volume du bus : plus on est tendu, plus la piste sort. */
+  private busLevel(): number {
+    return this.level * (0.86 + this.tension * 0.34)
+  }
+
+  private applyTension(): void {
+    if (!this.bus || !this.ctx || this.switching) return
+    this.bus.gain.setTargetAtTime(this.busLevel(), this.ctx.currentTime, 0.3)
   }
 
   get currentTrack(): MusicTrack {
@@ -161,7 +190,7 @@ class MusicEngine {
     if (!this.bus || !this.ctx) return
     this.bus.gain.cancelScheduledValues(this.ctx.currentTime)
     this.bus.gain.setValueAtTime(0.0001, this.ctx.currentTime)
-    this.bus.gain.linearRampToValueAtTime(this.level, this.ctx.currentTime + 1.2)
+    this.bus.gain.linearRampToValueAtTime(this.busLevel(), this.ctx.currentTime + 1.2)
   }
 
   /** Fondu : on baisse le bus, on change de motif, on remonte. */
@@ -172,6 +201,7 @@ class MusicEngine {
       return
     }
     const now = this.ctx.currentTime
+    this.switching = true
     this.bus.gain.cancelScheduledValues(now)
     this.bus.gain.setValueAtTime(this.bus.gain.value, now)
     this.bus.gain.linearRampToValueAtTime(0.0001, now + 0.35)
@@ -180,6 +210,7 @@ class MusicEngine {
       this.track = this.target
       this.bar = 0
       this.step = 0
+      this.switching = false
       if (this.ctx) this.nextTime = this.ctx.currentTime + 0.05
       this.fadeIn()
     }, 400)
@@ -279,6 +310,7 @@ class MusicEngine {
     const chord = GAME_CHORDS[bar]
     const notes: MusicNote[] = []
     const hits: MusicHit[] = []
+    const t = this.tension
 
     if (step === 0) {
       chord.notes.forEach((midi, i) => {
@@ -295,7 +327,7 @@ class MusicEngine {
       })
     }
 
-    // Basse : croches avec sauts d'octave.
+    // Basse : croches avec sauts d'octave. Plus c'est tendu, plus elle crie.
     if (step % 2 === 0) {
       const jump = [0, 0, 12, 0, 0, 12, 0, 7][(step / 2) % 8]
       notes.push({
@@ -303,8 +335,8 @@ class MusicEngine {
         dur: this.stepDuration * 1.7,
         type: 'sawtooth',
         gain: 0.11,
-        filter: 260,
-        filterEnd: 1500,
+        filter: 260 + t * 240,
+        filterEnd: 1400 + t * 1700,
         attack: 0.004,
       })
       notes.push({
@@ -312,7 +344,7 @@ class MusicEngine {
         dur: this.stepDuration * 0.8,
         type: 'square',
         gain: 0.035,
-        filter: 700,
+        filter: 700 + t * 400,
         attack: 0.004,
       })
     }
@@ -323,32 +355,45 @@ class MusicEngine {
       freq: midiToFreq(chord.notes[arpPattern[step % arpPattern.length]] + 12),
       dur: this.stepDuration * 0.9,
       type: 'square',
-      gain: 0.022,
+      gain: 0.022 * (0.55 + t * 0.95),
       send: 0.28,
       attack: 0.003,
     })
 
-    // Mélodie simple sur les temps pairs.
-    if (step % 4 === 0 && bar % 2 === 0) {
+    // Mélodie simple sur les temps pairs (plus souvent quand c'est serré).
+    if (step % 4 === 0 && (bar % 2 === 0 || t > 0.45)) {
       notes.push({
         freq: midiToFreq(chord.notes[2] + 24),
         dur: this.stepDuration * 3,
         type: 'triangle',
-        gain: 0.045,
+        gain: 0.045 * (0.7 + t * 0.7),
         send: 0.42,
         attack: 0.01,
       })
     }
 
+    // Couche de tension : pulsation aiguë, seulement dans les fins serrées.
+    if (t > 0.45 && step % 4 === 2) {
+      notes.push({
+        freq: midiToFreq(chord.root + 24),
+        dur: this.stepDuration * 0.8,
+        type: 'sawtooth',
+        gain: 0.014 * (t - 0.45) * 2.2,
+        filter: 2400,
+        filterEnd: 4400,
+        attack: 0.004,
+      })
+    }
+
     // Batterie.
     if (step % 4 === 0) {
-      hits.push({ dur: 0.2, gain: 0.24, freq: 150, type: 'lowpass', q: 1 })
+      hits.push({ dur: 0.2, gain: 0.24 * (0.72 + t * 0.45), freq: 150, type: 'lowpass', q: 1 })
     }
     if (step === 4 || step === 12) {
-      hits.push({ dur: 0.14, gain: 0.12, freq: 1900, type: 'bandpass', q: 0.8, send: 0.2 })
+      hits.push({ dur: 0.14, gain: 0.12 * (0.55 + t * 0.8), freq: 1900, type: 'bandpass', q: 0.8, send: 0.2 })
     }
     if (step % 2 === 1) {
-      hits.push({ dur: 0.03, gain: 0.03, freq: 8200, type: 'highpass' })
+      hits.push({ dur: 0.03, gain: 0.03 * (0.35 + t * 1.3), freq: 8200, type: 'highpass' })
     }
 
     return { notes, hits }

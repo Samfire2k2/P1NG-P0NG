@@ -1,4 +1,4 @@
-import { DIFFICULTY_PROFILES, DIFFICULTIES, type Difficulty } from '../game/constants'
+import { DIFFICULTY_PROFILES, DIFFICULTIES, type Difficulty, type MatchFormat } from '../game/constants'
 import type { EngineState } from '../game/engine'
 import type { NetStatus } from '../net/session'
 import ColorPicker from './ColorPicker'
@@ -15,7 +15,7 @@ interface StartOverlayProps {
   onColorChange: (h: number, s: number, v: number) => void
   onColorCommit: () => void
   onDifficulty: (d: Difficulty) => void
-  onTarget: (t: number) => void
+  onFormat: (format: MatchFormat, target: number) => void
   onGlow: (value: number) => void
   glow: number
   inviteLink: string
@@ -33,7 +33,12 @@ interface StartOverlayProps {
   onStartMatch: () => void
 }
 
-const TARGETS = [5, 7, 11]
+const FORMATS: Array<{ id: string; format: MatchFormat; target: number; label: string }> = [
+  { id: 'p5', format: 'points', target: 5, label: '5 pts' },
+  { id: 'p7', format: 'points', target: 7, label: '7 pts' },
+  { id: 'p11', format: 'points', target: 11, label: '11 pts' },
+  { id: 'time', format: 'time', target: 11, label: '3 min' },
+]
 
 export default function StartOverlay({
   state,
@@ -43,7 +48,7 @@ export default function StartOverlay({
   onColorChange,
   onColorCommit,
   onDifficulty,
-  onTarget,
+  onFormat,
   onGlow,
   glow,
   inviteLink,
@@ -186,29 +191,37 @@ export default function StartOverlay({
                   </div>
                 </div>
 
-                {/* Format */}
+                {/* Format de la manche */}
                 <div className="mt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Points gagnants
+                    Format
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {TARGETS.map((target) => {
-                      const active = state.target === target
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {FORMATS.map((option) => {
+                      const active =
+                        state.format === option.format &&
+                        (option.format === 'time' || state.target === option.target)
                       return (
                         <button
-                          key={target}
+                          key={option.id}
                           type="button"
-                          onClick={() => onTarget(target)}
-                          className={`glass-button rounded-lg px-2 py-2 text-xs font-semibold ${
+                          onClick={() => onFormat(option.format, option.target)}
+                          className={`glass-button rounded-lg px-2 py-2 text-[11px] font-semibold ${
                             active ? 'text-white' : 'text-zinc-400'
                           }`}
                           style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
                         >
-                          {target}
+                          {option.label}
                         </button>
                       )
                     })}
                   </div>
+                  {state.format === 'time' && (
+                    <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
+                      Trois minutes. Le meilleur score l’emporte, même si personne n’a atteint 11
+                      points.
+                    </p>
+                  )}
                 </div>
 
                 {/* Intensité du glow */}

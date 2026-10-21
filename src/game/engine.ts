@@ -1,8 +1,8 @@
 import { audio } from './audio'
 import type { Hsv } from './colors'
 import { aiHsvFrom, hsvToRgb } from './colors'
-import { FIXED_DT, MAX_STEPS_PER_FRAME, type Difficulty } from './constants'
-import { lerp } from './math'
+import { FIXED_DT, MAX_STEPS_PER_FRAME, ROUND_DURATION, type Difficulty, type MatchFormat } from './constants'
+import { clamp, lerp } from './math'
 import { music } from './music'
 import { World, type GameEvent, type Side } from './world'
 import { SnapshotInterpolator } from '../net/interpolator'
@@ -18,6 +18,12 @@ export interface EngineState {
   scorePlayer: number
   scoreAi: number
   target: number
+  /** Format de la manche : au nombre de points ou chronométrée. */
+  format: MatchFormat
+  /** Temps restant en mode « temps » ; -1 sinon. */
+  timeLeft: number
+  /** La manche s'est terminée par une égalité. */
+  draw: boolean
   countdown: number
   serving: boolean
   serveTo: Side
@@ -46,6 +52,7 @@ export interface EngineOptions {
   color: Hsv
   difficulty: Difficulty
   target: number
+  format: MatchFormat
   muted: boolean
 }
 
@@ -68,6 +75,8 @@ function netEventType(type: GameEvent['type']): number {
       return NET_EVENT.WIN
     case 'lose':
       return NET_EVENT.LOSE
+    case 'draw':
+      return NET_EVENT.DRAW
     default:
       return NET_EVENT.NONE
   }
@@ -92,6 +101,7 @@ export class GameEngine {
   private color: Hsv
   private difficulty: Difficulty
   private target: number
+  private format: MatchFormat = 'points'
   private muted: boolean
   private fps = 60
   private frameEma = 16.7
@@ -131,11 +141,13 @@ export class GameEngine {
     this.color = options.color
     this.difficulty = options.difficulty
     this.target = options.target
+    this.format = options.format
     this.muted = options.muted
 
     this.renderer = new Renderer(canvas)
     this.world.setPlayerColor(this.color)
     this.world.difficulty = this.difficulty
+    this.world.format = this.format
     this.world.target = this.target
     this.world.reset(this.target)
     this.world.frozen = true
@@ -159,6 +171,9 @@ export class GameEngine {
       scorePlayer: this.world.scorePlayer,
       scoreAi: this.world.scoreAi,
       target: this.world.target,
+      format: this.world.format,
+      timeLeft: this.world.timeLeft,
+      draw: this.world.draw,
       countdown: this.world.countdown,
       serving: this.world.phase === 'serve',
       serveTo: this.world.serveTo,
@@ -293,6 +308,19 @@ export class GameEngine {
   setTarget(target: number): void {
     this.target = target
     this.world.target = target
+    this.emit(true)
+  }
+
+  /**
+   * Change le format de la manche : au nombre de points (5, 7, 11) ou
+   * chronométré (3 minutes, le meilleur score l'emporte).
+   */
+  setFormat(format: MatchFormat, target: number): void {
+    this.format = format
+    this.target = target
+    this.world.format = format
+    this.world.target = target
+    this.world.timeLeft = format === 'time' ? ROUND_DURATION : -1
     this.emit(true)
   }
 
@@ -465,7 +493,15 @@ export class GameEngine {
     world.countdown = snap.countdown
     world.serveTo = snap.serveTo === 0 ? 'player' : 'ai'
     world.phase = (['serve', 'play', 'point', 'over'] as const)[snap.phase] ?? 'play'
-    if (world.phase === 'over') world.winner = snap.scoreHost > snap.scoreGuest ? 'player' : 'ai'
+    // Chronomètre : l'hôte fait foi, l'invité se contente de refléter.
+    world.timeLeft = snap.timeLeft
+    world.format = snap.timeLeft >= 0 ? 'time' : 'points'
+    // La balle porte la couleur de la raquette qui l'a frappée.
+    world.ball.owner = snap.ballOwner
+    if (world.phase === 'over') {
+      world.draw = snap.winner === 2
+      world.winner = snap.winner === 0 ? 'player' : snap.winner === 1 ? 'ai' : null
+    }
     this.playRemoteEvent(snap)
   }
 
@@ -497,6 +533,9 @@ export class GameEngine {
       case NET_EVENT.LOSE:
         audio.win()
         break
+      case NET_EVENT.DRAW:
+        audio.draw()
+        break
       default:
         break
     }
@@ -525,6 +564,9 @@ export class GameEngine {
       eventSide: event?.side ?? 0,
       eventPower: event?.power ?? 0,
       eventOffset: event?.offset ?? 0,
+      timeLeft: world.timeLeft,
+      ballOwner: world.ball.owner,
+      winner: world.draw ? 2 : world.winner === 'player' ? 0 : world.winner === 'ai' ? 1 : -1,
     }
   }
 
@@ -780,6 +822,9 @@ export class GameEngine {
           160,
         )
         break
+      case 'draw':
+        audio.draw()
+        break
       default:
         break
     }
@@ -788,6 +833,7 @@ export class GameEngine {
   private syncPhase(): void {
     // Musique : piste de jeu pendant la partie, piste du menu sinon.
     music.setTrack(this.phase === 'playing' ? 'game' : 'menu')
+    music.setTension(this.musicTension())
 
     if (this.mode === 'online') {
       const over = this.world.phase === 'over'
@@ -809,12 +855,32 @@ export class GameEngine {
     }
   }
 
+  /**
+   * Tension musicale : monte quand le score est serré, et dans la dernière
+   * demi-minute d'un round chronométré. Au début de la partie elle reste
+   * basse : l'écart au score n'a de sens qu'une fois la manche engagée.
+   */
+  private musicTension(): number {
+    if (this.phase !== 'playing') return 0
+    const diff = Math.abs(this.world.scorePlayer - this.world.scoreAi)
+    const closeness = clamp(1 - diff / 3, 0, 1)
+    const played = this.world.scorePlayer + this.world.scoreAi
+    const progress = clamp(played / 6, 0, 1)
+    const scoreTension = closeness * (0.35 + 0.65 * progress)
+    const timeLeft = this.world.timeLeft
+    const clockTension = timeLeft >= 0 ? clamp(1 - timeLeft / 30, 0, 1) : 0
+    return Math.max(scoreTension, clockTension)
+  }
+
   private emit(force = false): void {
     const state = this.getState()
     const signature = [
       state.phase,
       state.scorePlayer,
       state.scoreAi,
+      state.format,
+      Math.round(state.timeLeft),
+      state.draw,
       state.countdown,
       state.serving,
       state.serveTo,

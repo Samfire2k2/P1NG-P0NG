@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiHsvFrom, hsvToRgb, rgbToCss, type Hsv } from './game/colors'
 import { audio } from './game/audio'
-import { DIFFICULTIES, type Difficulty } from './game/constants'
+import { DIFFICULTIES, type Difficulty, type MatchFormat } from './game/constants'
 import { GameEngine, type EngineState } from './game/engine'
 import { music } from './game/music'
 import { normalizeRoomCode } from './net/session'
@@ -17,6 +17,8 @@ interface Settings {
   color: Hsv
   difficulty: Difficulty
   target: number
+  /** Format de la manche : au nombre de points ou chronométré. */
+  format: MatchFormat
   muted: boolean
   glow: number
 }
@@ -25,6 +27,7 @@ const DEFAULT_SETTINGS: Settings = {
   color: { h: 186, s: 0.95, v: 1 },
   difficulty: 'moyen',
   target: 11,
+  format: 'points',
   muted: false,
   glow: 1,
 }
@@ -42,6 +45,7 @@ function loadSettings(): Settings {
       color: { ...DEFAULT_SETTINGS.color, ...parsed.color },
       difficulty,
       target: typeof parsed.target === 'number' ? parsed.target : DEFAULT_SETTINGS.target,
+      format: parsed.format === 'time' ? 'time' : 'points',
       muted: Boolean(parsed.muted),
       glow: typeof parsed.glow === 'number' ? parsed.glow : DEFAULT_SETTINGS.glow,
     }
@@ -103,6 +107,7 @@ export default function App() {
         color: initial.color,
         difficulty: initial.difficulty,
         target: initial.target,
+        format: initial.format,
         muted: initial.muted,
       })
     } catch (error) {
@@ -200,9 +205,10 @@ export default function App() {
     audio.click()
   }, [])
 
-  const handleTarget = useCallback((target: number) => {
-    setSettings((prev) => ({ ...prev, target }))
-    engineRef.current?.setTarget(target)
+  /** Change le format : au nombre de points, ou round chronométré de 3 minutes. */
+  const handleFormat = useCallback((format: MatchFormat, target: number) => {
+    setSettings((prev) => ({ ...prev, format, target }))
+    engineRef.current?.setFormat(format, target)
     audio.click()
   }, [])
 
@@ -304,7 +310,7 @@ export default function App() {
           onColorChange={handleColorChange}
           onColorCommit={handleColorCommit}
           onDifficulty={handleDifficulty}
-          onTarget={handleTarget}
+          onFormat={handleFormat}
           onGlow={(value) => setSettings((prev) => ({ ...prev, glow: value }))}
           glow={settings.glow}
           inviteLink={inviteLink}

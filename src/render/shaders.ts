@@ -107,6 +107,9 @@ uniform float u_time;
 uniform vec3 u_playerColor;
 uniform vec3 u_aiColor;
 uniform float u_flash;
+uniform float u_lead;        // 0 = égalité, 1 = un joueur mène
+uniform vec3 u_leadColor;    // couleur du joueur qui mène
+uniform float u_gridPulse;   // impulsion déclenchée à chaque point
 
 float sdRoundBox(vec2 p, vec2 b, float r) {
   r = min(r, min(b.x, b.y));
@@ -136,11 +139,16 @@ void main() {
   col += u_playerColor * dl * 0.022;
   col += u_aiColor * dr * 0.022;
 
-  // Grille
+  // Grille : teinte du joueur qui mène, impulsion lumineuse à chaque point
+  vec3 gridColor = mix(vec3(0.10, 0.16, 0.30), u_leadColor * 0.85, u_lead * 0.72);
+  float pulse = 1.0 + u_gridPulse * (0.55 + 0.45 * sin(u_time * 9.0));
   float g1 = gridMask(world, 50.0, 1.0);
   float g2 = gridMask(world, 200.0, 1.4);
-  col += vec3(0.10, 0.16, 0.30) * g1 * 0.085;
-  col += vec3(0.16, 0.24, 0.44) * g2 * 0.130;
+  col += gridColor * g1 * 0.085 * pulse;
+  col += gridColor * g2 * 0.130 * pulse;
+
+  // Léger voile de la couleur du meneur sur tout le terrain
+  col += u_leadColor * u_lead * 0.014 * (1.0 + u_gridPulse * 2.0);
 
   // Arène : rectangle luminescent
   vec2 halfSize = u_field * 0.5;
@@ -148,14 +156,16 @@ void main() {
   float d = sdRoundBox(world - center, halfSize, 26.0);
   float border = 1.0 - smoothstep(0.0, 3.0, abs(d));
   float aura = exp(-abs(d) * 0.035);
-  col += vec3(0.30, 0.55, 1.0) * border * 0.55;
-  col += vec3(0.16, 0.32, 0.70) * aura * 0.075;
+  vec3 borderColor = mix(vec3(0.30, 0.55, 1.0), u_leadColor, u_lead * 0.5);
+  col += borderColor * border * 0.55 * (1.0 + u_gridPulse * 1.1);
+  col += vec3(0.16, 0.32, 0.70) * aura * 0.075 * (1.0 + u_gridPulse * 1.6);
 
   // Ligne médiane pointillée
   float mid = abs(world.x - u_field.x * 0.5);
   float dash = step(0.5, fract(world.y / 110.0));
   float line = (1.0 - smoothstep(0.0, 3.5, mid)) * dash;
-  col += vec3(0.35, 0.60, 1.0) * line * 0.42;
+  vec3 lineColor = mix(vec3(0.35, 0.60, 1.0), u_leadColor * 1.15, u_lead * 0.6);
+  col += lineColor * line * 0.42;
   col += vec3(0.18, 0.30, 0.62) * exp(-mid * 0.08) * dash * 0.075;
 
   // Impulsion globale

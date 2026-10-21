@@ -154,6 +154,50 @@ try {
   )
   check(accentBefore !== accentAfter, `la couleur d'accent change avec la teinte (${accentBefore.trim()} -> ${accentAfter.trim()})`)
 
+  // --- Round chronométré : chronomètre, couleur de la balle, tension ---
+  await page.getByRole('button', { name: '3 min', exact: true }).click()
+  await wait(400)
+  await page.getByRole('button', { name: /^Jouer$/i }).click()
+  await wait(2000)
+
+  const timed = await page.evaluate(() => {
+    const engine = window.__pingPong?.engine
+    const state = engine?.getState?.()
+    return {
+      format: state?.format,
+      timeLeft: state?.timeLeft ?? -1,
+      tension: window.__pingPong?.music?.currentTension ?? -1,
+      hud: document.body.innerText,
+    }
+  })
+  check(timed.format === 'time', 'le format chronométré est actif')
+  check(timed.timeLeft > 0 && timed.timeLeft <= 180, `le chronomètre est lancé (${Math.round(timed.timeLeft)} s)`)
+  check(/\b\d:\d\d\b/.test(timed.hud), 'le HUD affiche le compte à rebours')
+
+  const timeBefore = timed.timeLeft
+  await wait(1600)
+  const timeAfter = await page.evaluate(() => window.__pingPong?.engine?.getState?.().timeLeft ?? -1)
+  check(timeAfter < timeBefore, `le chronomètre décompte (${Math.round(timeBefore)} -> ${Math.round(timeAfter)})`)
+
+  // La balle prend la couleur de la raquette qui l'a frappée : on suit la
+  // balle pour provoquer un contact.
+  let owner = -99
+  for (let i = 0; i < 40 && owner < 0; i++) {
+    await wait(200)
+    owner = await page.evaluate(() => {
+      const engine = window.__pingPong?.engine
+      const world = engine?.world
+      if (!engine || !world) return -99
+      engine.localPaddleTarget = world.ball.y
+      return world.ball.owner
+    })
+  }
+  check(
+    owner === 0 || owner === 1,
+    `la balle porte la couleur de la raquette qui l’a frappée (owner=${owner})`,
+  )
+  check(timed.tension >= 0 && timed.tension <= 1, `la tension musicale est dans [0, 1] (${timed.tension.toFixed(2)})`)
+
   check(errors.length === 0, `aucune erreur JS (${errors.join(' | ') || 'aucune'})`)
   await browser.close()
 } catch (e) {

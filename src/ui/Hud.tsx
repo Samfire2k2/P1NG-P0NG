@@ -36,6 +36,14 @@ function IconButton({
   )
 }
 
+/** Chronomètre : mm:ss, arrondi au-dessus pour ne jamais afficher 0:00 trop tôt. */
+function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.ceil(seconds))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 export default function Hud({
   state,
   onTogglePause,
@@ -49,6 +57,9 @@ export default function Hud({
   const online = state.mode === 'online'
   // En ligne, l'hôte est à gauche, l'invité à droite.
   const localIsLeft = state.side === 'left'
+  // Manche chronométrée : le compte à rebours remplace l'indication de format.
+  const timed = state.timeLeft >= 0
+  const urgent = timed && state.timeLeft <= 30
   // Sur les deux écrans, scorePlayer = raquette de gauche, scoreAi = raquette de droite.
   const leftScore = state.scorePlayer
   const rightScore = state.scoreAi
@@ -91,7 +102,14 @@ export default function Hud({
 
       {/* Info centrale */}
       <div className="absolute top-5 left-1/2 -translate-x-1/2 text-center">
-        {online ? (
+        {timed ? (
+          <div
+            className="font-mono-game text-3xl leading-none font-bold"
+            style={{ color: urgent ? '#fb7185' : 'var(--accent)' }}
+          >
+            {formatClock(state.timeLeft)}
+          </div>
+        ) : online ? (
           <div className="flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
@@ -103,6 +121,11 @@ export default function Hud({
         ) : (
           <div className="text-[10px] font-semibold tracking-[0.4em] text-zinc-500 uppercase">
             Premier à {state.target}
+          </div>
+        )}
+        {online && timed && (
+          <div className="mt-1 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+            Salon {state.roomCode} · {state.latency} ms
           </div>
         )}
         <div className="font-mono-game mt-1 text-[10px] text-zinc-600">{state.fps} FPS</div>

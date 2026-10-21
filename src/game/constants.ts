@@ -24,8 +24,11 @@ export const MAX_BOUNCE_ANGLE = 1.08
 /** Transfert de "l'effet" (English) : part de la vitesse verticale du paddle. */
 export const SPIN_TRANSFER = 0.34
 
-export const TRAIL_LENGTH = 26
+export const TRAIL_LENGTH = 64
 export const PARTICLE_CAPACITY = 2600
+
+/** Durée de vie d'un échantillon de traînée (secondes). */
+export const TRAIL_LIFE = 0.42
 
 /** Pas de simulation fixe (240 Hz) : évite tout tunneling de la balle. */
 export const FIXED_DT = 1 / 240
@@ -33,6 +36,12 @@ export const MAX_STEPS_PER_FRAME = 12
 
 export const COUNTDOWN_STEP = 0.38
 export const POINT_PAUSE = 0.9
+
+/** Format d'une manche : au nombre de points, ou à la durée. */
+export type MatchFormat = 'points' | 'time'
+
+/** Durée d'une manche en mode « temps » (3 minutes). */
+export const ROUND_DURATION = 180
 
 export const DIFFICULTIES = ['facile', 'moyen', 'difficile', 'expert'] as const
 export type Difficulty = (typeof DIFFICULTIES)[number]
