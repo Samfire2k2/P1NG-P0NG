@@ -17,6 +17,8 @@ interface OnlineLobbyProps {
   onStartMatch: () => void
   onCreate: () => void
   onJoin: (code: string, key: string) => void
+  onJoinSpectator?: (code: string, key: string) => void
+  leaderboard?: { name: string; score: number; date: string }[]
   onQuit: () => void
 }
 
@@ -72,6 +74,8 @@ export default function OnlineLobby({
   onStartMatch,
   onCreate,
   onJoin,
+  onJoinSpectator,
+  leaderboard,
   onQuit,
 }: OnlineLobbyProps) {
   const [code, setCode] = useState(initialCode)
@@ -227,6 +231,16 @@ export default function OnlineLobby({
           >
             Rejoindre
           </button>
+          {onJoinSpectator && (
+            <button
+              type="button"
+              onClick={() => onJoinSpectator(code.trim(), key.trim())}
+              disabled={code.trim().length < 3}
+              className="glass-button mt-2 w-full rounded-xl px-4 py-2.5 text-xs font-semibold text-zinc-400 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Regarder la partie
+            </button>
+          )}
           <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
             Le lien contient le code <em>et</em> la clé : colle l’URL complète et les deux champs se
             remplissent tout seuls.
@@ -238,6 +252,21 @@ export default function OnlineLobby({
 
   return (
     <div className="space-y-3">
+      {leaderboard && leaderboard.length > 0 && (
+        <div className="glass-panel rounded-2xl p-3">
+          <div className="mb-1 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+            Classement du salon
+          </div>
+          <div className="space-y-1 text-[11px] text-zinc-400">
+            {leaderboard.slice(0, 5).map((e, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <span>{e.name}</span>
+                <span className="font-mono-game">{e.score}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <NameField value={playerName} onChange={onNameChange} />
       {content}
     </div>

@@ -32,6 +32,7 @@ interface StartOverlayProps {
   netMessage: string
   onCreateRoom: () => void
   onJoinRoom: (code: string, key: string) => void
+  onJoinSpectator?: (code: string, key: string) => void
   onQuitRoom: () => void
   roomCode: string
   initialCode: string
@@ -39,6 +40,7 @@ interface StartOverlayProps {
   playerName: string
   peerName: string
   history: { date: string; mode: string; format: string; scorePlayer: number; scoreAi: number; difficulty: string; target: number }[]
+  leaderboard: { name: string; score: number; date: string }[]
   canStart: boolean
   onNameChange: (name: string) => void
   onStartMatch: () => void
@@ -76,6 +78,7 @@ export default function StartOverlay({
   netMessage,
   onCreateRoom,
   onJoinRoom,
+  onJoinSpectator,
   onQuitRoom,
   roomCode,
   initialCode,
@@ -83,6 +86,7 @@ export default function StartOverlay({
   playerName,
   peerName,
   history,
+  leaderboard,
   canStart,
   onNameChange,
   onStartMatch,
@@ -182,6 +186,8 @@ export default function StartOverlay({
                   onStartMatch={onStartMatch}
                   onCreate={onCreateRoom}
                   onJoin={onJoinRoom}
+                  onJoinSpectator={onJoinSpectator}
+                  leaderboard={leaderboard}
                   onQuit={onQuitRoom}
                 />
               </div>

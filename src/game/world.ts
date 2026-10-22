@@ -505,8 +505,7 @@ export class World {
     // If no balls left, park and serve
     if (this.balls.length === 0) {
       this.parkBall()
-      this.phase = 'point'
-      // serveTimer already set by onGoal? onGoal set phase='point' and serveTimer. 
+      if (this.phase !== 'over') this.phase = 'point'
     }
   }
 
@@ -739,7 +738,6 @@ export class World {
     if (scorer === 'player') this.scorePlayer++
     else this.scoreAi++
 
-    if (this.brickMode) this.buildBricks()
     this.lastScorer = scorer
     this.phase = 'point'
     this.serveTimer = POINT_PAUSE
@@ -773,6 +771,12 @@ export class World {
       this.draw = false
       this.winner = this.scorePlayer > this.scoreAi ? 'player' : 'ai'
       this.push({ type: this.winner === 'player' ? 'win' : 'lose', side: this.winner })
+    } else {
+      this.phase = 'point'
+      this.serveTimer = POINT_PAUSE
+      this.shake = 1
+      this.flash = 1
+      this.gridPulse = 1
     }
   }
 

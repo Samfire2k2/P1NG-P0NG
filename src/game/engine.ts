@@ -46,6 +46,8 @@ export interface EngineState {
   latency: number
   peerConnected: boolean
   netMessage: string
+  /** Mode spectateur (lecture seule). */
+  spectator: boolean
   /** Mode powerups actif. */
   powerups: boolean
   /** Mode casse-brique actif. */
@@ -138,6 +140,7 @@ export class GameEngine {
   private interpolator = new SnapshotInterpolator()
   private mode: GameMode = 'ai'
   private netStatus: NetStatus = 'idle'
+  private spectator = false
   private netMessage = ''
   private latency = 0
   private peerConnected = false
@@ -222,6 +225,7 @@ export class GameEngine {
       netMessage: this.netMessage,
       powerups: this.powerups,
       brickMode: this.brickMode,
+      spectator: this.spectator,
       orientation: this.orientation,
       duration: this.duration,
     }
@@ -426,8 +430,16 @@ export class GameEngine {
 
   /** Rejoint un salon existant. */
   joinOnlineRoom(code: string, key: string): void {
+    this.spectator = false
     const session = this.buildSession()
     session.join(code, key)
+    this.attachSession(session)
+  }
+
+  joinSpectatorRoom(code: string, key: string): void {
+    this.spectator = true
+    const session = this.buildSession()
+    session.joinSpectator(code, key)
     this.attachSession(session)
   }
 
@@ -864,10 +876,10 @@ export class GameEngine {
           this.session.sendControl(CTRL.START)
         }
         this.session.sendState(this.buildSnapshot())
-      } else {
-        this.session.sendInput(this.world.netPaddleY ?? this.world.ai.y)
-        this.applyRemoteState()
-      }
+        } else {
+          if (!this.spectator) this.session.sendInput(this.world.netPaddleY ?? this.world.ai.y)
+          this.applyRemoteState()
+        }
     }
 
     // Simulation à pas fixe

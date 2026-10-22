@@ -111,11 +111,21 @@ export function normalizeRoomCode(raw: string): string {
  */
 export class NetSession {
   role: NetRole = 'host'
+  spectator = false
   roomId = ''
   password = ''
   status: NetStatus = 'idle'
   latency = 0
   peerId: string | null = null
+  /** Pairs spectateurs (lecture seule). */
+  spectators: Set<string> = new Set()
+  /** Identifiant du pair opposant (hôte ou invité). */
+  opponentId: string | null = null
+  /** Paramètres de la dernière connexion (pour la reconnexion). */
+  private lastJoin: { roomId: string; password: string } | null = null
+  private reconnectAttempts = 0
+  private reconnectTimer = 0
+  autoReconnect = true
 
   private room: Room | null = null
   private handlers: NetSessionHandlers
@@ -196,16 +206,28 @@ export class NetSession {
     this.setupActions()
 
     this.room.onPeerJoin = (peerId) => {
-      this.peerId = peerId
-      this.setStatus('connected')
+      if (this.opponentId === null) {
+        this.opponentId = peerId
+        this.peerId = peerId
+      } else {
+        this.spectators.add(peerId)
+      }
+      if (this.opponentId !== null || this.spectators.size > 0) {
+        this.setStatus('connected')
+      }
       this.handlers.onPeerJoin?.()
       this.sendControl(CTRL.HELLO)
     }
 
-    this.room.onPeerLeave = () => {
-      this.peerId = null
+    this.room.onPeerLeave = (peerId) => {
+      if (peerId === this.opponentId) {
+        this.opponentId = null
+        this.peerId = null
         this.setStatus('waiting', 'Ton adversaire a quitté la partie.')
-      this.handlers.onPeerLeave?.()
+        this.handlers.onPeerLeave?.()
+      } else {
+        this.spectators.delete(peerId)
+      }
     }
 
     this.setStatus('waiting')
@@ -217,20 +239,25 @@ export class NetSession {
     this.role = 'guest'
     this.roomId = normalizeRoomCode(roomId)
     this.password = password
+    this.lastJoin = { roomId: this.roomId, password }
+    this.reconnectAttempts = 0
     this.setStatus('connecting')
     this.room = this.buildRoom()
     this.setupActions()
 
     this.room.onPeerJoin = (peerId) => {
       this.peerId = peerId
+      this.opponentId = peerId
       this.setStatus('connected')
       this.handlers.onPeerJoin?.()
     }
 
     this.room.onPeerLeave = () => {
       this.peerId = null
+      this.opponentId = null
         this.setStatus('closed', 'Ton adversaire a quitté la partie.')
       this.handlers.onPeerLeave?.()
+      this.scheduleReconnect()
     }
   }
 
@@ -282,9 +309,12 @@ export class NetSession {
     })
   }
 
-  /** Hôte → invité : état complet de la partie. */
+  /** Hôte → invité(s) + spectateurs : état complet de la partie. */
   sendState(snapshot: NetSnapshot): void {
-    if (!this.stateAction || this.role !== 'host' || !this.peerId) return
+    if (this.stateAction || this.role !== 'host') {
+      // continue
+    }
+    if (!this.stateAction || this.role !== 'host') return
     const view = this.snapshotFloats
     view[0] = snapshot.ballX
     view[1] = snapshot.ballY
@@ -305,7 +335,12 @@ export class NetSession {
     view[16] = snapshot.timeLeft
     view[17] = snapshot.ballOwner
     view[18] = snapshot.winner
-    void this.stateAction.send(this.snapshotBytes.slice(), { target: this.peerId })
+    const targets = new Set<string>()
+    if (this.opponentId) targets.add(this.opponentId)
+    for (const s of this.spectators) targets.add(s)
+    for (const target of targets) {
+      void this.stateAction.send(this.snapshotBytes.slice(), { target })
+    }
   }
 
   /** Invité → hôte : position cible de la raquette distante. */
@@ -320,8 +355,26 @@ export class NetSession {
     void this.ctrlAction.send(new Uint8Array([code]), { target: this.peerId })
   }
 
-  /** Mesure la latence aller-retour toutes les 2 s. */
+  private scheduleReconnect(): void {
+    if (!this.autoReconnect || this.role !== 'guest' || !this.lastJoin) return
+    if (this.reconnectAttempts >= 5) return
+    this.reconnectAttempts++
+    if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = window.setTimeout(() => {
+      if (!this.lastJoin) return
+      this.setStatus('connecting', 'Reconnexion…')
+      this.join(this.lastJoin.roomId, this.lastJoin.password)
+    }, 2000)
+  }
+
+  cancelReconnect(): void {
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = 0
+    }
+  }
   tick(dt: number): void {
+    if (this.status === 'connected') this.reconnectAttempts = 0
     if (this.status !== 'connected' || !this.peerId) return
     this.pingTimer -= dt
     if (this.pingTimer <= 0) {
@@ -329,6 +382,13 @@ export class NetSession {
       this.pingSentAt = performance.now()
       this.sendControl(CTRL.PING)
     }
+  }
+
+  /** Rejoint un salon en tant que spectateur (lecture seule). */
+  joinSpectator(roomId: string, password: string): void {
+    this.join(roomId, password)
+    this.spectator = true
+    this.role = 'guest'
   }
 
   leave(): void {

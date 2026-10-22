@@ -13,6 +13,24 @@ import StartOverlay, { type GameModeTab } from './ui/StartOverlay'
 const STORAGE_KEY = 'p1ng-p0ng-settings'
 const NAME_KEY = 'p1ng-p0ng-name'
 const HISTORY_KEY = 'p1ng-p0ng-history'
+const LEADERBOARD_KEY = 'p1ng-p0ng-leaderboard'
+interface LeaderEntry { name: string; score: number; date: string }
+function loadLeaderboard(): Record<string, LeaderEntry[]> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(LEADERBOARD_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, LeaderEntry[]>) : {}
+  } catch {
+    return {}
+  }
+}
+function saveLeaderboard(lb: Record<string, LeaderEntry[]>): void {
+  try {
+    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(lb))
+  } catch {
+    /* ignore */
+  }
+}
 interface HistoryEntry {
   date: string
   mode: 'ai' | 'online'
@@ -133,6 +151,7 @@ export default function App() {
   const [state, setState] = useState<EngineState | null>(null)
   const [settings, setSettings] = useState<Settings>(loadSettings)
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
+  const [leaderboard, setLeaderboard] = useState<Record<string, LeaderEntry[]>>(loadLeaderboard)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
   const [tab, setTab] = useState<GameModeTab>('ai')
@@ -158,6 +177,20 @@ export default function App() {
         saveHistory(next)
         return next
       })
+      if (state.mode === 'online' && state.roomCode) {
+        setLeaderboard((prev) => {
+          const code = state.roomCode
+          const list = prev[code] ?? []
+          const next = [
+            { name: state.playerName || 'Toi', score: state.scorePlayer, date: new Date().toISOString() },
+            { name: state.peerName || 'Adversaire', score: state.scoreAi, date: new Date().toISOString() },
+            ...list,
+          ].slice(0, 20)
+          const updated = { ...prev, [code]: next }
+          saveLeaderboard(updated)
+          return updated
+        })
+      }
     }
     lastPhaseRef.current = state.phase
   }, [state?.phase])
@@ -357,6 +390,15 @@ export default function App() {
     [],
   )
 
+  const handleJoinSpectator = useCallback(
+    (code: string, key: string) => {
+      audio.init()
+      audio.click()
+      engineRef.current?.joinSpectatorRoom(code, key)
+    },
+    [],
+  )
+
   const handleQuitRoom = useCallback(() => {
     audio.click()
     engineRef.current?.backToMenu()
@@ -437,6 +479,7 @@ export default function App() {
           netMessage={state.netMessage}
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
+          onJoinSpectator={handleJoinSpectator}
           onQuitRoom={handleQuitRoom}
           roomCode={state.roomCode}
           initialCode={invite.code}
@@ -444,6 +487,7 @@ export default function App() {
           playerName={playerName}
           peerName={state.peerName}
           history={history}
+          leaderboard={state.roomCode ? (leaderboard[state.roomCode] ?? []) : []}
           canStart={state.mode === 'online' && state.side === 'left' && state.peerConnected}
           onNameChange={handleNameChange}
           onStartMatch={handleStartMatch}
