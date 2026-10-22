@@ -5,7 +5,7 @@ import ColorPicker from './ColorPicker'
 import { IconPalette, IconPlay } from './icons'
 import OnlineLobby from './OnlineLobby'
 
-export type GameModeTab = 'ai' | 'online'
+export type GameModeTab = 'ai' | 'online' | 'brick'
 
 interface StartOverlayProps {
   state: EngineState

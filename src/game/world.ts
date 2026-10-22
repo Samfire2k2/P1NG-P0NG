@@ -154,9 +154,18 @@ export class World {
 
   /** Mode powerups : des bonus apparaissent sur le terrain. */
   powerupsEnabled = false
-  /** Mode casse-brique : mur de briques au centre. */
+  /**
+   * Mode casse-brique : un seul joueur, pas d'IA. Le joueur renvoye la balle
+   * pour casser toutes les briques ; il perd une vie si la balle passe.
+   */
   brickMode = false
   bricks: Brick[] = []
+  /** Nombre de briques encore debout. */
+  bricksLeft = 0
+  /** Vies restantes en mode casse-brique. */
+  brickLives = 3
+  /** Briques cassées (score du mode casse-brique). */
+  bricksBroken = 0
   powerups: Powerup[] = []
   private spawnTimer = 0
   /** Multiplicateurs actifs jusqu'au prochain point. */
@@ -258,6 +267,9 @@ export class World {
     this.powerups = []
     this.spawnTimer = 5
     this.bricks = []
+    this.bricksLeft = 0
+    this.bricksBroken = 0
+    this.brickLives = BRICK_LIVES
     if (this.brickMode) this.buildBricks()
     this.playerHeightMul = 1
     this.aiHeightMul = 1
@@ -477,6 +489,8 @@ export class World {
           const overlapY = b.y + b.r > brick.y && b.y - b.r < brick.y + brick.h
           if (overlapX && overlapY) {
             brick.alive = false
+            this.bricksLeft--
+            this.bricksBroken++
             // Rebond : on inverse l'axe le plus proche du centre de la brique.
             const brickCx = brick.x + brick.w / 2
             const brickCy = brick.y + brick.h / 2
@@ -486,10 +500,30 @@ export class World {
             else b.vy = -b.vy
             this.shake = Math.max(this.shake, 0.3)
             this.flash = Math.max(this.flash, 0.2)
+            this.particles.burst(brickCx, brickCy, 10, brick.color, {
+              speed: 180,
+              spread: TAU,
+              life: 0.4,
+              size: 4,
+            })
+            this.push({ type: 'wallHit', x: brickCx, y: brickCy })
+
+            // Mode casse-brique : pas d'adversaire, le score compte les
+            // briques cassées. Victoire quand il n'en reste plus.
+            if (this.brickMode) {
+              this.scorePlayer = this.bricksBroken
+              if (this.bricksLeft <= 0) {
+                this.phase = 'over'
+                this.draw = false
+                this.winner = 'player'
+                this.push({ type: 'win', side: 'player' })
+              }
+              break
+            }
+
             // Point pour celui qui a frappé.
             if (b.owner === 0) this.scorePlayer++
             else if (b.owner === 1) this.scoreAi++
-            this.push({ type: 'wallHit', x: brickCx, y: brickCy })
             if (this.format === 'points' && (this.scorePlayer >= this.target || this.scoreAi >= this.target)) {
               this.phase = 'over'
               this.winner = this.scorePlayer > this.scoreAi ? 'player' : 'ai'
@@ -695,10 +729,10 @@ export class World {
   }
 
   buildBricks(): void {
-    const cols = 6
-    const rows = 4
-    const bw = 46
-    const bh = 26
+    const cols = 8
+    const rows = 6
+    const bw = 40
+    const bh = 24
     const gap = 8
     const totalW = cols * bw + (cols - 1) * gap
     const startX = (FIELD_WIDTH - totalW) / 2
@@ -722,9 +756,25 @@ export class World {
         })
       }
     }
+    this.bricksLeft = this.bricks.length
   }
 
   private onGoal(scorer: Side): void {
+    // Mode casse-brique : le but enlève une vie ; s'il en reste, on relance.
+    if (this.brickMode) {
+      this.brickLives--
+      if (this.brickLives <= 0) {
+        this.phase = 'over'
+        this.draw = false
+        this.winner = 'ai'
+        this.push({ type: 'lose', side: 'ai' })
+      } else {
+        this.phase = 'point'
+        this.serveTimer = POINT_PAUSE
+        this.push({ type: 'score', side: scorer, value: this.brickLives })
+      }
+      return
+    }
     // Bouclier : absorbe le but.
     if (scorer === 'player' && this.aiShield) {
       this.aiShield = false

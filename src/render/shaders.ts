@@ -55,6 +55,7 @@ void main() {
   int type = int(v_shape.x + 0.5);
   float alpha;
   float d;
+  float rgb_edge = 0.0;
 
   if (type == 2) {
     // Halo radial doux
@@ -71,6 +72,14 @@ void main() {
     float f = 26.0;
     alpha = d <= 0.0 ? 1.0 : exp(-d / f);
     alpha *= 1.0 - smoothstep(f * 2.6, f * 3.4, d);
+  } else if (type == 4) {
+    // Brique : bloc plein avec un liseré plus clair sur les bords
+    d = sdRoundBox(v_local, v_size, v_shape.y);
+    float aa = max(fwidth(d), 1e-4) * 0.75;
+    float fill = 1.0 - smoothstep(-aa, aa, d);
+    float edge = 1.0 - smoothstep(0.0, 3.0, abs(d));
+    alpha = fill;
+    rgb_edge = edge * 0.55;
   } else {
     d = sdRoundBox(v_local, v_size, v_shape.y);
     float aa = max(fwidth(d), 1e-4) * 0.75;
@@ -78,7 +87,7 @@ void main() {
   }
 
   if (alpha <= 0.0015) discard;
-  vec3 rgb = v_color.rgb * v_shape.w;
+  vec3 rgb = v_color.rgb * v_shape.w + vec3(rgb_edge);
   fragColor = vec4(rgb * alpha, alpha * v_color.a);
 }
 `

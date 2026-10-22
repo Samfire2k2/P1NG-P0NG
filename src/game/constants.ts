@@ -43,6 +43,9 @@ export type MatchFormat = 'points' | 'time'
 /** Durée d'une manche en mode « temps » (3 minutes). */
 export const ROUND_DURATION = 180
 
+/** Vies du joueur en mode casse-brique. */
+export const BRICK_LIVES = 3
+
 export const DIFFICULTIES = ['facile', 'moyen', 'difficile', 'expert'] as const
 export type Difficulty = (typeof DIFFICULTIES)[number]
 

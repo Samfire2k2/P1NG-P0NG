@@ -551,6 +551,11 @@ export class Renderer {
       this.pushGlow(px, py, 22, 22, col, 0.5)
       this.core.push(px, py, 14, 14, col[0], col[1], col[2], 0.9, 1, 14, 0, 1.3)
     }
+
+    // La passe opaque doit être envoyée au GPU : sans cet envoi, ni les
+    // raquettes, ni la balle, ni les briques ne sont dessinées (seul le
+    // halo de la passe additive apparaît).
+    this.core.flush()
   }
 
   private pushGlow(
