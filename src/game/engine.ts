@@ -421,9 +421,9 @@ export class GameEngine {
   }
 
   /** Crée un salon et attend l'adversaire. Retourne le lien d'invitation. */
-  createOnlineRoom(): string {
+  createOnlineRoom(publicRoom = false): string {
     const session = this.buildSession()
-    session.create()
+    session.create(undefined, publicRoom ? '' : undefined)
     this.attachSession(session)
     return this.inviteLink()
   }
@@ -450,7 +450,7 @@ export class GameEngine {
     const url = new URL(window.location.href)
     url.search = ''
     url.searchParams.set('room', session.roomId)
-    url.searchParams.set('key', session.password)
+    if (session.password) url.searchParams.set('key', session.password)
     return url.toString()
   }
 

@@ -152,6 +152,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings)
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const [leaderboard, setLeaderboard] = useState<Record<string, LeaderEntry[]>>(loadLeaderboard)
+  const [splash, setSplash] = useState(true)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
   const [tab, setTab] = useState<GameModeTab>('ai')
@@ -259,6 +260,12 @@ export default function App() {
     root.style.setProperty('--accent-ai', ai)
   }, [settings.color, state?.peerColor])
 
+  // Écran de démarrage (logo)
+  useEffect(() => {
+    const t = window.setTimeout(() => setSplash(false), 2200)
+    return () => window.clearTimeout(t)
+  }, [])
+
   // Persistance
   useEffect(() => {
     saveSettings(settings)
@@ -302,6 +309,13 @@ export default function App() {
   const handleNameChange = useCallback((name: string) => {
     setPlayerName(name)
     engineRef.current?.setPlayerName(name)
+  }, [])
+
+  const handleCreateRoom = useCallback((publicRoom = false) => {
+    audio.init()
+    audio.click()
+    const link = engineRef.current?.createOnlineRoom(publicRoom) ?? ''
+    setInviteLink(link)
   }, [])
 
   /** L'hôte lance la rencontre en ligne. */
@@ -350,11 +364,6 @@ export default function App() {
     audio.click()
   }, [])
 
-  const handleDuration = useCallback((seconds: number) => {
-    setSettings((prev) => ({ ...prev, duration: seconds }))
-    engineRef.current?.setDuration(seconds)
-  }, [])
-
   const handleToggleMute = useCallback(() => {
     setSettings((prev) => {
       const muted = !prev.muted
@@ -373,13 +382,6 @@ export default function App() {
   }, [])
 
   // ------------------------------------------------------------ En ligne
-
-  const handleCreateRoom = useCallback(() => {
-    audio.init()
-    audio.click()
-    const link = engineRef.current?.createOnlineRoom() ?? ''
-    setInviteLink(link)
-  }, [])
 
   const handleJoinRoom = useCallback(
     (code: string, key: string) => {
@@ -416,6 +418,17 @@ export default function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#05060a]">
+      {splash && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#05060a] cursor-pointer"
+          onClick={() => setSplash(false)}
+        >
+          <h1 className="ping-title text-7xl font-extrabold tracking-tight sm:text-8xl">
+            P1NG-P0NG
+          </h1>
+          <p className="mt-4 text-sm tracking-[0.4em] text-zinc-500 uppercase">pong néon</p>
+        </div>
+      )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
       {!state && (
@@ -472,7 +485,6 @@ export default function App() {
           orientation={settings.orientation}
           onOrientation={handleOrientation}
           duration={settings.duration}
-          onDuration={handleDuration}
           onGlow={(value) => setSettings((prev) => ({ ...prev, glow: value }))}
           glow={settings.glow}
           inviteLink={inviteLink}

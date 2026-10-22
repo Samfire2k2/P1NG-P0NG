@@ -15,7 +15,7 @@ interface OnlineLobbyProps {
   canStart: boolean
   onNameChange: (name: string) => void
   onStartMatch: () => void
-  onCreate: () => void
+  onCreate: (publicRoom: boolean) => void
   onJoin: (code: string, key: string) => void
   onJoinSpectator?: (code: string, key: string) => void
   leaderboard?: { name: string; score: number; date: string }[]
@@ -191,12 +191,24 @@ export default function OnlineLobby({
       <div className="space-y-3">
         <button
           type="button"
-          onClick={onCreate}
+          onClick={() => onCreate(false)}
           className="primary-button flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-[0.2em] uppercase"
         >
           <IconPlay className="h-4 w-4" />
           Créer un salon
         </button>
+
+        <button
+          type="button"
+          onClick={() => onCreate(true)}
+          className="glass-button mt-2 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-xs font-semibold text-zinc-300"
+        >
+          Créer un salon public
+        </button>
+        <p className="mt-1 text-center text-[11px] leading-relaxed text-zinc-600">
+          Un salon public n’a pas de clé : il apparaît dans le classement et peut être rejoint
+          par n’importe qui.
+        </p>
 
         <div className="relative flex items-center gap-3 py-1">
           <span className="h-px flex-1 bg-white/10" />

@@ -25,12 +25,11 @@ interface StartOverlayProps {
   orientation: 'landscape' | 'portrait'
   onOrientation: (o: 'landscape' | 'portrait') => void
   duration: number
-  onDuration: (seconds: number) => void
   onGlow: (value: number) => void
   glow: number
   inviteLink: string
   netMessage: string
-  onCreateRoom: () => void
+  onCreateRoom: (publicRoom: boolean) => void
   onJoinRoom: (code: string, key: string) => void
   onJoinSpectator?: (code: string, key: string) => void
   onQuitRoom: () => void
@@ -45,13 +44,6 @@ interface StartOverlayProps {
   onNameChange: (name: string) => void
   onStartMatch: () => void
 }
-
-const FORMATS: Array<{ id: string; format: MatchFormat; target: number; label: string }> = [
-  { id: 'p5', format: 'points', target: 5, label: '5 pts' },
-  { id: 'p7', format: 'points', target: 7, label: '7 pts' },
-  { id: 'p11', format: 'points', target: 11, label: '11 pts' },
-  { id: 'time', format: 'time', target: 11, label: '3 min' },
-]
 
 export default function StartOverlay({
   state,
@@ -71,7 +63,6 @@ export default function StartOverlay({
   orientation,
   onOrientation,
   duration,
-  onDuration,
   onGlow,
   glow,
   inviteLink,
@@ -218,56 +209,64 @@ export default function StartOverlay({
                   </div>
                 </div>
 
-                {/* Format de la manche */}
+                {/* Points */}
                 <div className="mt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Format
+                    Points
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
-                    {FORMATS.map((option) => {
-                      const active =
-                        state.format === option.format &&
-                        (option.format === 'time' || state.target === option.target)
+                    {[5, 7, 11, 15].map((target) => {
+                      const active = state.format === 'points' && state.target === target
                       return (
                         <button
-                          key={option.id}
+                          key={target}
                           type="button"
-                          onClick={() => onFormat(option.format, option.target)}
+                          onClick={() => onFormat('points', target, duration)}
                           className={`glass-button rounded-lg px-2 py-2 text-[11px] font-semibold ${
                             active ? 'text-white' : 'text-zinc-400'
                           }`}
                           style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
                         >
-                          {option.label}
+                          {target}
                         </button>
                       )
                     })}
                   </div>
+                </div>
+
+                {/* Temps */}
+                <div className="mt-4">
+                  <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                    Temps
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      step={1}
+                      value={Math.round(duration / 60)}
+                      onChange={(e) => onFormat('time', state.target, Math.max(60, Number(e.target.value) * 60))}
+                      className="glass-button w-20 rounded-lg px-3 py-2 text-sm text-zinc-200"
+                    />
+                    <span className="text-[11px] text-zinc-500">minutes</span>
+                    <button
+                      type="button"
+                      onClick={() => onFormat('time', state.target, duration)}
+                      className={`glass-button rounded-lg px-3 py-2 text-xs font-semibold ${
+                        state.format === 'time' ? 'text-white' : 'text-zinc-400'
+                      }`}
+                      style={state.format === 'time' ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+                    >
+                      {state.format === 'time' ? 'Actif' : 'Activer'}
+                    </button>
+                  </div>
                   {state.format === 'time' && (
                     <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
-                      Trois minutes. Le meilleur score l’emporte, même si personne n’a atteint 11
-                      points.
+                      {Math.round(duration / 60)} min. Le meilleur score l’emporte.
                     </p>
                   )}
                 </div>
-
-                {/* Durée (mode temps) */}
-                {state.format === 'time' && (
-                  <div className="mt-4">
-                    <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                      Durée (secondes)
-                    </div>
-                    <input
-                      type="number"
-                      min={30}
-                      max={3600}
-                      step={30}
-                      value={duration}
-                      onChange={(e) => onDuration(Number(e.target.value))}
-                      className="glass-button w-full rounded-lg px-3 py-2 text-sm text-zinc-200"
-                    />
-                  </div>
-                )}
 
                 {/* Powerups */}
                 <div className="mt-4 flex items-center justify-between">
