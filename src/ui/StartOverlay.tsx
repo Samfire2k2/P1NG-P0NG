@@ -259,8 +259,7 @@ export default function StartOverlay({
                   Jouer
                 </button>
                 <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
-                  Souris ou flèches · <span className="text-zinc-500">Espace</span> = pause ·{' '}
-                  <span className="text-zinc-500">R</span> = relancer
+                  Souris ou flèches · <span className="text-zinc-500">Espace</span> = pause
                 </p>
               </>
             )}

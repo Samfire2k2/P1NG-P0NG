@@ -54,6 +54,11 @@ export interface Paddle {
   vy: number
   height: number
   color: Rgb
+  /**
+   * Suit la cible sans limite de vitesse (curseur) : la raquette reste
+   * exactement sous la souris.
+   */
+  snappy?: boolean
 }
 
 export interface Ball {
@@ -189,7 +194,8 @@ export class World {
     this.parkBall()
     this.countdown = 2
     this.countdownStep = 0
-    this.serveTimer = 0
+    // Le « 2 » reste affiché un temps avant de passer à « 1 ».
+    this.serveTimer = COUNTDOWN_STEP
     this.serveTo = this.rng() < 0.5 ? 'player' : 'ai'
   }
 
@@ -241,7 +247,7 @@ export class World {
         this.phase = 'serve'
         this.countdown = 2
         this.countdownStep = 0
-        this.serveTimer = 0
+        this.serveTimer = COUNTDOWN_STEP
         this.serveTo = this.lastScorer === 'player' ? 'ai' : 'player'
         this.parkBall()
       }
@@ -283,6 +289,12 @@ export class World {
     const half = p.height / 2
     const target = clamp(this.playerTargetY, half, FIELD_HEIGHT - half)
     const dy = target - p.y
+    if (p.snappy) {
+      // Contrôle à la souris : la raquette colle au curseur, sans retard.
+      p.y = target
+      p.vy = dt > 0 ? clamp(dy / dt, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED) : 0
+      return
+    }
     const maxStep = PLAYER_MAX_SPEED * dt
     const move = clamp(dy, -maxStep, maxStep)
     p.y = clamp(p.y + move, half, FIELD_HEIGHT - half)
@@ -291,16 +303,16 @@ export class World {
 
   private updateServe(dt: number): void {
     this.serveTimer -= dt
-    if (this.serveTimer <= 0) {
+    if (this.serveTimer > 0) return
+    if (this.countdown > 0) {
+      // On annonce la valeur affichée, puis on décrémente.
+      this.push({ type: 'countdown', value: this.countdown })
       this.countdown--
-      if (this.countdown > 0) {
-        this.serveTimer = COUNTDOWN_STEP
-        this.push({ type: 'countdown', value: this.countdown })
-      } else {
-        this.serveTimer = 0
-        this.launchServe()
-      }
+      this.serveTimer = COUNTDOWN_STEP
+      return
     }
+    this.serveTimer = 0
+    this.launchServe()
   }
 
   private launchServe(): void {
@@ -455,6 +467,12 @@ export class World {
     if (this.netPaddleY === null) return
     const desired = clamp(this.netPaddleY, half, FIELD_HEIGHT - half)
     const dy = desired - paddle.y
+    if (paddle.snappy) {
+      // Raquette locale de l'invité : elle colle au curseur, sans retard.
+      paddle.y = desired
+      paddle.vy = dt > 0 ? clamp(dy / dt, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED) : 0
+      return
+    }
     const maxStep = PLAYER_MAX_SPEED * dt
     const move = clamp(dy, -maxStep, maxStep)
     paddle.y = clamp(paddle.y + move, half, FIELD_HEIGHT - half)

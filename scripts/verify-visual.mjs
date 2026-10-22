@@ -188,6 +188,8 @@ try {
       const engine = window.__pingPong?.engine
       const world = engine?.world
       if (!engine || !world) return -99
+      // On pilote la raquette à la main (le curseur reprend la main ensuite).
+      engine.pointerActive = false
       engine.localPaddleTarget = world.ball.y
       return world.ball.owner
     })
@@ -196,7 +198,64 @@ try {
     owner === 0 || owner === 1,
     `la balle porte la couleur de la raquette qui l’a frappée (owner=${owner})`,
   )
+  await page.mouse.move(640, 220)
+  await wait(200)
   check(timed.tension >= 0 && timed.tension <= 1, `la tension musicale est dans [0, 1] (${timed.tension.toFixed(2)})`)
+
+  // --- La raquette suit la souris sans retard ---
+  await page.mouse.move(640, 220)
+  await wait(150)
+  const sync = await page.evaluate(() => {
+    const engine = window.__pingPong?.engine
+    return {
+      paddle: Math.round(engine?.world?.player?.y ?? -1),
+      target: Math.round(engine?.localPaddleTarget ?? -2),
+    }
+  })
+  check(
+    Math.abs(sync.paddle - sync.target) < 4,
+    `la raquette est calée sur le curseur (écart ${Math.abs(sync.paddle - sync.target)} unités)`,
+  )
+
+  // --- Redémarrage : la simulation repart (le monde ne doit pas rester gelé) ---
+  await page.getByRole('button', { name: 'Recommencer' }).click()
+  await wait(200)
+  const restarted = await page.evaluate(() => {
+    const engine = window.__pingPong?.engine
+    return {
+      frozen: engine?.world?.frozen ?? true,
+      phase: engine?.world?.phase ?? '',
+      countdown: engine?.world?.countdown ?? -1,
+    }
+  })
+  check(restarted.frozen === false, 'le redémarrage relance la simulation')
+  check(restarted.countdown === 2, `le compte à rebours repart de 2 (${restarted.countdown})`)
+
+  // Espace pendant le compte à rebours : la partie ne doit pas se figer.
+  await page.keyboard.press('Space')
+  await wait(200)
+  const afterSpace = await page.evaluate(() => window.__pingPong?.engine?.getState?.().phase)
+  check(afterSpace !== 'paused', 'Espace ne met pas en pause pendant le compte à rebours')
+
+  await wait(2200)
+  const served = await page.evaluate(() => {
+    const engine = window.__pingPong?.engine
+    return { phase: engine?.world?.phase ?? '', countdown: engine?.world?.countdown ?? -1 }
+  })
+  check(
+    served.phase === 'play' || served.countdown < 2,
+    `la balle est servie après le compte à rebours (${served.phase}, cd=${served.countdown})`,
+  )
+
+  // La touche R ne relance plus la partie.
+  const beforeR = await page.evaluate(() => window.__pingPong?.engine?.world?.frame ?? 0)
+  await page.keyboard.press('KeyR')
+  await wait(300)
+  const afterR = await page.evaluate(() => {
+    const engine = window.__pingPong?.engine
+    return { frame: engine?.world?.frame ?? 0, phase: engine?.world?.phase ?? '' }
+  })
+  check(afterR.phase !== 'serve' || afterR.frame > beforeR, 'la touche R ne relance plus la partie')
 
   check(errors.length === 0, `aucune erreur JS (${errors.join(' | ') || 'aucune'})`)
   await browser.close()

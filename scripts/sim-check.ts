@@ -9,6 +9,7 @@ import {
   FIELD_WIDTH,
   FIXED_DT,
   PADDLE_WIDTH,
+  PLAYER_MAX_SPEED,
   ROUND_DURATION,
 } from '../src/game/constants.ts'
 import { World } from '../src/game/world.ts'
@@ -331,6 +332,40 @@ console.log('\n— Écho du terrain —')
     w.drainEvents()
   }
   check(w.gridPulse < pulse, 'l’impulsion de la grille s’amortit')
+}
+
+console.log('\n— Compte à rebours de service —')
+{
+  const w = new World()
+  w.setSeed(7)
+  w.reset(11)
+  w.frozen = false
+  const seq: number[] = []
+  let steps = 0
+  while (w.phase === 'serve' && steps < 240 * 5) {
+    w.step(FIXED_DT)
+    w.drainEvents()
+    if (seq[seq.length - 1] !== w.countdown) seq.push(w.countdown)
+    steps++
+  }
+  check(seq.join(',') === '2,1,0', `le compte à rebours passe par 2, 1, 0 (${seq.join(',')})`)
+  check(w.phase === 'play', 'la balle est servie une fois le compte à rebours terminé')
+  check(steps > 240 && steps < 240 * 3, `le compte à rebours dure environ une seconde (${steps} pas)`)
+}
+
+console.log('\n— Raquette pilotée à la souris —')
+{
+  const w = new World()
+  w.reset(11)
+  w.frozen = false
+  w.player.snappy = true
+  w.playerTargetY = 120
+  w.step(FIXED_DT)
+  check(Math.abs(w.player.y - 120) < 1, 'la raquette colle immédiatement au curseur')
+  w.playerTargetY = 800
+  w.step(FIXED_DT)
+  check(Math.abs(w.player.y - 800) < 1, 'la raquette suit les déplacements rapides du curseur')
+  check(Math.abs(w.player.vy) <= PLAYER_MAX_SPEED + 1, 'la vitesse reste bornée (effet de raquette)')
 }
 
 console.log('')

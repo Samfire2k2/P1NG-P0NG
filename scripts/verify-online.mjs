@@ -196,13 +196,22 @@ try {
   check(hostPixels > 0, `la balle est rendue chez l'hôte (${hostPixels} px)`)
   check(guestPixels > 0, `la balle est rendue chez l'invité (${guestPixels} px)`)
 
-  // --- Les scores sont synchronisés (miroir) ---
+  // --- Les scores sont synchronisés (même Convention des deux côtés) ---
   await wait(6000)
   const hostScores = await readEngine(host)
   const guestScores = await readEngine(guest)
   check(
-    hostScores?.scorePlayer === guestScores?.scoreAi && hostScores?.scoreAi === guestScores?.scorePlayer,
+    hostScores?.scorePlayer === guestScores?.scorePlayer &&
+      hostScores?.scoreAi === guestScores?.scoreAi,
     `scores synchronisés (hôte ${hostScores?.scorePlayer}-${hostScores?.scoreAi} / invité ${guestScores?.scorePlayer}-${guestScores?.scoreAi})`,
+  )
+
+  // --- La simulation tourne vraiment des deux côtés ---
+  const hostBall = hostScores?.ball ?? [0, 0]
+  const guestBall = guestScores?.ball ?? [0, 0]
+  check(
+    Math.abs(hostBall[0] - 800) > 30 || Math.abs(guestBall[0] - 800) > 30,
+    `la balle est en jeu et non garée (hôte x=${Math.round(hostBall[0])} / invité x=${Math.round(guestBall[0])})`,
   )
 
   // --- Le HUD associe le bon score au bon côté (gauche = hôte) ---
@@ -243,8 +252,6 @@ try {
   check(/NOVA/i.test(guestNames) && /ZEPHYR/i.test(guestNames), "l'invité voit les deux pseudos dans le HUD")
 
   // --- La position de la balle est cohérente entre les deux vues ---
-  const hostBall = hostScores?.ball ?? [0, 0]
-  const guestBall = guestScores?.ball ?? [0, 0]
   const delta = Math.hypot(hostBall[0] - guestBall[0], hostBall[1] - guestBall[1])
   check(delta < 220, `la balle est synchronisée entre les deux vues (écart ${Math.round(delta)} unités)`)
 

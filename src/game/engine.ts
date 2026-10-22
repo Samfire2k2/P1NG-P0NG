@@ -113,6 +113,7 @@ export class GameEngine {
   private keyUp = false
   private keyDown = false
   private pointerActive = false
+  private pointerClientY = 0
   private pointerWorldY = 450
 
   private session: NetSession | null = null
@@ -151,6 +152,8 @@ export class GameEngine {
     this.world.target = this.target
     this.world.reset(this.target)
     this.world.frozen = true
+    // En solo, la raquette de gauche est celle du joueur : elle suit la souris.
+    this.world.player.snappy = true
 
     this.attachListeners()
     this.handleResize()
@@ -218,8 +221,14 @@ export class GameEngine {
   }
 
   togglePause(): void {
-    if (this.phase === 'playing') this.pause()
-    else if (this.phase === 'paused') this.resume()
+    if (this.phase === 'playing') {
+      // Le compte à rebours de service n'est pas interruptible : la partie ne
+      // peut pas se retrouver figée en plein décompte.
+      if (this.world.phase === 'serve') return
+      this.pause()
+    } else if (this.phase === 'paused') {
+      this.resume()
+    }
   }
 
   restart(): void {
@@ -233,7 +242,7 @@ export class GameEngine {
   private restartLocal(): void {
     this.world.reset(this.target)
     // L'invité ne simule pas la physique : l'hôte reste autoritatif.
-    this.world.frozen = !(this.mode === 'online' && this.session?.role === 'guest')
+    this.world.frozen = this.mode === 'online' && this.session?.role === 'guest'
     this.renderer.resetTrail()
     this.matchStarted = true
     this.phase = 'playing'
@@ -384,6 +393,11 @@ export class GameEngine {
     this.world.aiRemote = true
     this.world.playerRemote = session.role === 'guest'
     this.world.netPaddleY = session.role === 'guest' ? this.world.ai.y : null
+    // La raquette pilotée à la souris est celle du joueur local : à gauche
+    // pour l'hôte, à droite pour l'invité.
+    const guest = session.role === 'guest'
+    this.world.player.snappy = !guest
+    this.world.ai.snappy = guest
     this.matchStarted = false
     this.phase = 'menu'
     this.applyColors()
@@ -401,6 +415,8 @@ export class GameEngine {
     this.world.aiRemote = false
     this.world.playerRemote = false
     this.world.netPaddleY = null
+    this.world.player.snappy = true
+    this.world.ai.snappy = false
     this.phase = 'menu'
     this.applyColors()
     this.emit(true)
@@ -601,7 +617,9 @@ export class GameEngine {
   }
 
   private attachListeners(): void {
-    this.canvas.addEventListener('pointermove', this.onPointerMove, { passive: true })
+    // Le pointeur est suivi au niveau de la fenêtre : la position reste
+    // connue même quand le curseur passe sur les menus.
+    window.addEventListener('pointermove', this.onPointerMove, { passive: true })
     this.canvas.addEventListener('pointerdown', this.onPointerDown, { passive: true })
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
@@ -615,7 +633,7 @@ export class GameEngine {
   }
 
   private detachListeners(): void {
-    this.canvas.removeEventListener('pointermove', this.onPointerMove)
+    window.removeEventListener('pointermove', this.onPointerMove)
     this.canvas.removeEventListener('pointerdown', this.onPointerDown)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
@@ -624,16 +642,28 @@ export class GameEngine {
   }
 
   private onPointerMove = (event: PointerEvent): void => {
+    this.pointerClientY = event.clientY
+    this.pointerActive = true
+  }
+
+  /**
+   * Convertit la position du curseur en cible monde. Appelé à chaque frame :
+   * la raquette reste ainsi exactement sous la souris, même si la mise en page
+   * change (redimensionnement, passage en plein écran).
+   */
+  private updatePointerTarget(): void {
     const rect = this.canvas.getBoundingClientRect()
     const view = computeView(this.renderer.pixelWidth, this.renderer.pixelHeight)
-    const canvasY = (event.clientY - rect.top) * (this.renderer.pixelHeight / Math.max(rect.height, 1))
+    const canvasY =
+      (this.pointerClientY - rect.top) * (this.renderer.pixelHeight / Math.max(rect.height, 1))
     this.pointerWorldY = screenToWorldY(view, canvasY)
-    this.pointerActive = true
     this.localPaddleTarget = this.pointerWorldY
   }
 
-  private onPointerDown = (): void => {
+  private onPointerDown = (event: PointerEvent): void => {
     audio.init()
+    this.pointerClientY = event.clientY
+    this.pointerActive = true
     if (this.phase === 'paused') this.resume()
   }
 
@@ -655,9 +685,6 @@ export class GameEngine {
         audio.init()
         if (this.phase === 'menu') this.start()
         else this.togglePause()
-        break
-      case 'KeyR':
-        this.restart()
         break
       case 'KeyM':
         this.setMuted(!this.muted)
@@ -725,8 +752,11 @@ export class GameEngine {
 
     this.updateQuality(now, rawDt)
 
-    // Entrées clavier
-    if (!this.pointerActive) {
+    // Entrées clavier / souris
+    if (this.pointerActive) {
+      // La raquette suit le curseur, image par image.
+      this.updatePointerTarget()
+    } else {
       const dir = (this.keyUp ? -1 : 0) + (this.keyDown ? 1 : 0)
       if (dir !== 0) this.localPaddleTarget += dir * KEYBOARD_SPEED * dt
     }
