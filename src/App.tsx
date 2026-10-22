@@ -12,7 +12,32 @@ import StartOverlay, { type GameModeTab } from './ui/StartOverlay'
 
 const STORAGE_KEY = 'p1ng-p0ng-settings'
 const NAME_KEY = 'p1ng-p0ng-name'
-
+const HISTORY_KEY = 'p1ng-p0ng-history'
+interface HistoryEntry {
+  date: string
+  mode: 'ai' | 'online'
+  format: string
+  scorePlayer: number
+  scoreAi: number
+  difficulty: string
+  target: number
+}
+function loadHistory(): HistoryEntry[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    return raw ? (JSON.parse(raw) as HistoryEntry[]) : []
+  } catch {
+    return []
+  }
+}
+function saveHistory(entries: HistoryEntry[]): void {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 20)))
+  } catch {
+    /* ignore */
+  }
+}
 interface Settings {
   color: Hsv
   difficulty: Difficulty
@@ -23,6 +48,10 @@ interface Settings {
   duration: number
   /** Mode powerups. */
   powerups: boolean
+  /** Mode casse-brique. */
+  brickMode: boolean
+  /** Thème visuel. */
+  theme: number
   /** Orientation du terrain. */
   orientation: 'landscape' | 'portrait'
   muted: boolean
@@ -36,6 +65,8 @@ const DEFAULT_SETTINGS: Settings = {
   format: 'points',
   duration: 180,
   powerups: false,
+  brickMode: false,
+  theme: 0,
   orientation: 'landscape',
   muted: false,
   glow: 1,
@@ -57,6 +88,8 @@ function loadSettings(): Settings {
       format: parsed.format === 'time' ? 'time' : 'points',
       duration: typeof parsed.duration === 'number' ? parsed.duration : DEFAULT_SETTINGS.duration,
       powerups: Boolean(parsed.powerups),
+      brickMode: Boolean(parsed.brickMode),
+      theme: typeof parsed.theme === 'number' ? parsed.theme : 0,
       orientation: parsed.orientation === 'portrait' ? 'portrait' : 'landscape',
       muted: Boolean(parsed.muted),
       glow: typeof parsed.glow === 'number' ? parsed.glow : DEFAULT_SETTINGS.glow,
@@ -99,12 +132,35 @@ export default function App() {
   const engineRef = useRef<GameEngine | null>(null)
   const [state, setState] = useState<EngineState | null>(null)
   const [settings, setSettings] = useState<Settings>(loadSettings)
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
   const [tab, setTab] = useState<GameModeTab>('ai')
   const [invite] = useState(readInviteParams)
   const [inviteLink, setInviteLink] = useState('')
   const [playerName, setPlayerName] = useState(loadName)
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
+  // Historique des parties
+  const lastPhaseRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!state) return
+    if (state.phase === 'gameover' && lastPhaseRef.current !== 'gameover') {
+      const entry: HistoryEntry = {
+        date: new Date().toISOString(),
+        mode: state.mode,
+        format: state.format,
+        scorePlayer: state.scorePlayer,
+        scoreAi: state.scoreAi,
+        difficulty: state.difficulty,
+        target: state.target,
+      }
+      setHistory((prev) => {
+        const next = [entry, ...prev].slice(0, 20)
+        saveHistory(next)
+        return next
+      })
+    }
+    lastPhaseRef.current = state.phase
+  }, [state?.phase])
   const playerNameRef = useRef(playerName)
   playerNameRef.current = playerName
 
@@ -122,6 +178,7 @@ export default function App() {
         format: initial.format,
         duration: initial.duration,
         powerups: initial.powerups,
+        brickMode: initial.brickMode,
         orientation: initial.orientation,
         muted: initial.muted,
       })
@@ -180,13 +237,17 @@ export default function App() {
     engineRef.current?.setRenderSettings({
       bloomIntensity: settings.glow,
       chromatic: 0.0008 + settings.glow * 0.0012,
+      theme: settings.theme,
     })
-  }, [settings.glow])
+  }, [settings.glow, settings.theme])
 
   // Powerups / orientation / durée
   useEffect(() => {
     engineRef.current?.setPowerups(settings.powerups)
   }, [settings.powerups])
+  useEffect(() => {
+    engineRef.current?.setBrickMode(settings.brickMode)
+  }, [settings.brickMode])
   useEffect(() => {
     engineRef.current?.setOrientation(settings.orientation)
   }, [settings.orientation])
@@ -241,6 +302,12 @@ export default function App() {
   const handlePowerups = useCallback((enabled: boolean) => {
     setSettings((prev) => ({ ...prev, powerups: enabled }))
     engineRef.current?.setPowerups(enabled)
+    audio.click()
+  }, [])
+
+  const handleBrickMode = useCallback((enabled: boolean) => {
+    setSettings((prev) => ({ ...prev, brickMode: enabled }))
+    engineRef.current?.setBrickMode(enabled)
     audio.click()
   }, [])
 
@@ -356,6 +423,10 @@ export default function App() {
           onFormat={handleFormat}
           powerups={settings.powerups}
           onPowerups={handlePowerups}
+          brickMode={settings.brickMode}
+          onBrickMode={handleBrickMode}
+          theme={settings.theme}
+          onTheme={(t) => setSettings((prev) => ({ ...prev, theme: t }))}
           orientation={settings.orientation}
           onOrientation={handleOrientation}
           duration={settings.duration}
@@ -372,6 +443,7 @@ export default function App() {
           initialKey={invite.key}
           playerName={playerName}
           peerName={state.peerName}
+          history={history}
           canStart={state.mode === 'online' && state.side === 'left' && state.peerConnected}
           onNameChange={handleNameChange}
           onStartMatch={handleStartMatch}

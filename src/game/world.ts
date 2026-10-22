@@ -23,10 +23,19 @@ import { clamp, createRng, randRange, TAU } from './math'
 import { ParticleSystem } from './particles'
 import { aiColorFrom, hsvToRgb, type Hsv, type Rgb } from './colors'
 
+export interface Brick {
+  x: number
+  y: number
+  w: number
+  h: number
+  alive: boolean
+  color: Rgb
+}
+
 export type Side = 'player' | 'ai'
 export type Phase = 'serve' | 'play' | 'point' | 'over'
 
-export type PowerupType = 'speed' | 'slow' | 'grow' | 'shrink'
+export type PowerupType = 'speed' | 'slow' | 'grow' | 'shrink' | 'multiball' | 'shield' | 'teleport' | 'magnet' | 'ghost' | 'double'
 
 export interface Powerup {
   x: number
@@ -104,7 +113,28 @@ export class World {
 
   player: Paddle
   ai: Paddle
-  ball: Ball
+  /** Toutes les balles en jeu (multi-balle possible). */
+  balls: Ball[] = []
+
+  /** Accès à la balle principale (compatibilité). */
+  get ball(): Ball {
+    if (this.balls.length === 0) {
+      this.balls.push({
+        x: FIELD_WIDTH / 2,
+        y: FIELD_HEIGHT / 2,
+        vx: 0,
+        vy: 0,
+        r: BALL_RADIUS,
+        speed: BALL_START_SPEED,
+        owner: -1,
+      })
+    }
+    return this.balls[0]
+  }
+  set ball(value: Ball) {
+    if (this.balls.length === 0) this.balls.push(value)
+    else this.balls[0] = value
+  }
 
   scorePlayer = 0
   scoreAi = 0
@@ -120,12 +150,26 @@ export class World {
 
   /** Mode powerups : des bonus apparaissent sur le terrain. */
   powerupsEnabled = false
+  /** Mode casse-brique : mur de briques au centre. */
+  brickMode = false
+  bricks: Brick[] = []
   powerups: Powerup[] = []
   private spawnTimer = 0
   /** Multiplicateurs actifs jusqu'au prochain point. */
   playerHeightMul = 1
   aiHeightMul = 1
   ballSpeedMul = 1
+  /** Bouclier actif (absorbe un but). */
+  playerShield = false
+  aiShield = false
+  /** Aimant (secondes restantes). */
+  playerMagnet = 0
+  aiMagnet = 0
+  /** Invisibilité (secondes restantes). */
+  ghostTimer = 0
+  /** Double raquette. */
+  playerDouble = false
+  aiDouble = false
 
   serveTimer = 0
   serveTo: Side = 'player'
@@ -163,7 +207,7 @@ export class World {
   constructor() {
     this.player = { x: PLAYER_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.playerColor }
     this.ai = { x: FIELD_WIDTH - AI_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.aiColor }
-    this.ball = { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }
+    this.balls = [{ x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }]
   }
 
   setSeed(seed: number): void {
@@ -201,9 +245,18 @@ export class World {
     this.lastScorer = null
     this.powerups = []
     this.spawnTimer = 5
+    this.bricks = []
+    if (this.brickMode) this.buildBricks()
     this.playerHeightMul = 1
     this.aiHeightMul = 1
     this.ballSpeedMul = 1
+    this.playerShield = false
+    this.aiShield = false
+    this.playerMagnet = 0
+    this.aiMagnet = 0
+    this.ghostTimer = 0
+    this.playerDouble = false
+    this.aiDouble = false
     this.player.y = FIELD_HEIGHT / 2
     this.player.vy = 0
     this.ai.y = FIELD_HEIGHT / 2
@@ -228,12 +281,7 @@ export class World {
   }
 
   private parkBall(): void {
-    this.ball.x = FIELD_WIDTH / 2
-    this.ball.y = FIELD_HEIGHT / 2
-    this.ball.vx = 0
-    this.ball.vy = 0
-    this.ball.speed = BALL_START_SPEED
-    this.ball.owner = -1
+    this.balls = [{ x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }]
   }
 
   private push(ev: GameEvent): void {
@@ -278,6 +326,27 @@ export class World {
         this.serveTimer = COUNTDOWN_STEP
         this.serveTo = this.lastScorer === 'player' ? 'ai' : 'player'
         this.parkBall()
+      }
+    }
+
+    this.playerMagnet = Math.max(0, this.playerMagnet - dt)
+    this.aiMagnet = Math.max(0, this.aiMagnet - dt)
+    this.ghostTimer = Math.max(0, this.ghostTimer - dt)
+
+    // Aimant : la balle dévie vers la raquette adverse.
+    if (this.playerMagnet > 0 || this.aiMagnet > 0) {
+      for (const b of this.balls) {
+        if (this.playerMagnet > 0 && b.vx < 0) {
+          const dy = this.player.y - b.y
+          b.vy += dy * 1.8 * dt
+        }
+        if (this.aiMagnet > 0 && b.vx > 0) {
+          const dy = this.ai.y - b.y
+          b.vy += dy * 1.8 * dt
+        }
+        const mag = Math.hypot(b.vx, b.vy) || 1
+        b.vx = (b.vx / mag) * b.speed
+        b.vy = (b.vy / mag) * b.speed
       }
     }
 
@@ -357,37 +426,88 @@ export class World {
   }
 
   private updateBall(dt: number): void {
-    const b = this.ball
-    b.x += b.vx * dt
-    b.y += b.vy * dt
+    const toRemove: number[] = []
+    for (let i = 0; i < this.balls.length; i++) {
+      if (this.phase !== 'play') break
+      const b = this.balls[i]
+      b.x += b.vx * dt
+      b.y += b.vy * dt
 
-    // Murs haut / bas
-    if (b.y - b.r <= 0) {
-      b.y = b.r
-      b.vy = Math.abs(b.vy)
-      this.onWallHit(b.x, 0, b)
-    } else if (b.y + b.r >= FIELD_HEIGHT) {
-      b.y = FIELD_HEIGHT - b.r
-      b.vy = -Math.abs(b.vy)
-      this.onWallHit(b.x, FIELD_HEIGHT, b)
-    }
-
-    // Paddles
-    if (b.vx < 0) {
-      const front = this.player.x + PADDLE_WIDTH / 2
-      if (b.x - b.r <= front && b.x > this.player.x - PADDLE_WIDTH) {
-        if (this.paddleOverlap(this.player, b)) this.onPaddleHit(this.player, b, 1)
+      // Murs haut / bas
+      if (b.y - b.r <= 0) {
+        b.y = b.r
+        b.vy = Math.abs(b.vy)
+        this.onWallHit(b.x, 0, b)
+      } else if (b.y + b.r >= FIELD_HEIGHT) {
+        b.y = FIELD_HEIGHT - b.r
+        b.vy = -Math.abs(b.vy)
+        this.onWallHit(b.x, FIELD_HEIGHT, b)
       }
-    } else if (b.vx > 0) {
-      const front = this.ai.x - PADDLE_WIDTH / 2
-      if (b.x + b.r >= front && b.x < this.ai.x + PADDLE_WIDTH) {
-        if (this.paddleOverlap(this.ai, b)) this.onPaddleHit(this.ai, b, -1)
+
+      // Paddles
+      if (b.vx < 0) {
+        const front = this.player.x + PADDLE_WIDTH / 2
+        if (b.x - b.r <= front && b.x > this.player.x - PADDLE_WIDTH) {
+          if (this.paddleOverlap(this.player, b)) this.onPaddleHit(this.player, b, 1)
+        }
+      } else if (b.vx > 0) {
+        const front = this.ai.x - PADDLE_WIDTH / 2
+        if (b.x + b.r >= front && b.x < this.ai.x + PADDLE_WIDTH) {
+          if (this.paddleOverlap(this.ai, b)) this.onPaddleHit(this.ai, b, -1)
+        }
+      }
+
+      // Briques
+      if (this.brickMode) {
+        for (const brick of this.bricks) {
+          if (!brick.alive) continue
+          const overlapX = b.x + b.r > brick.x && b.x - b.r < brick.x + brick.w
+          const overlapY = b.y + b.r > brick.y && b.y - b.r < brick.y + brick.h
+          if (overlapX && overlapY) {
+            brick.alive = false
+            // Rebond : on inverse l'axe le plus proche du centre de la brique.
+            const brickCx = brick.x + brick.w / 2
+            const brickCy = brick.y + brick.h / 2
+            const dx = b.x - brickCx
+            const dy = b.y - brickCy
+            if (Math.abs(dx) / brick.w > Math.abs(dy) / brick.h) b.vx = -b.vx
+            else b.vy = -b.vy
+            this.shake = Math.max(this.shake, 0.3)
+            this.flash = Math.max(this.flash, 0.2)
+            // Point pour celui qui a frappé.
+            if (b.owner === 0) this.scorePlayer++
+            else if (b.owner === 1) this.scoreAi++
+            this.push({ type: 'wallHit', x: brickCx, y: brickCy })
+            if (this.format === 'points' && (this.scorePlayer >= this.target || this.scoreAi >= this.target)) {
+              this.phase = 'over'
+              this.winner = this.scorePlayer > this.scoreAi ? 'player' : 'ai'
+              this.draw = false
+              this.push({ type: this.winner === 'player' ? 'win' : 'lose', side: this.winner })
+            }
+            break
+          }
+        }
+      }
+
+      // But
+      if (b.x + b.r < 0) {
+        toRemove.push(i)
+        this.onGoal('ai')
+      } else if (b.x - b.r > FIELD_WIDTH) {
+        toRemove.push(i)
+        this.onGoal('player')
       }
     }
-
-    // But
-    if (b.x + b.r < 0) this.onGoal('ai')
-    else if (b.x - b.r > FIELD_WIDTH) this.onGoal('player')
+    // Remove scored balls (reverse order)
+    for (let k = toRemove.length - 1; k >= 0; k--) {
+      this.balls.splice(toRemove[k], 1)
+    }
+    // If no balls left, park and serve
+    if (this.balls.length === 0) {
+      this.parkBall()
+      this.phase = 'point'
+      // serveTimer already set by onGoal? onGoal set phase='point' and serveTimer. 
+    }
   }
 
   private paddleOverlap(p: Paddle, b: Ball): boolean {
@@ -469,7 +589,7 @@ export class World {
         this.spawnTimer = 6 + Math.random() * 4
         const alive = this.powerups.filter((p) => p.alive)
         if (alive.length < 3) {
-          const types: PowerupType[] = ['speed', 'slow', 'grow', 'shrink']
+          const types: PowerupType[] = ['speed', 'slow', 'grow', 'shrink', 'multiball', 'shield', 'teleport', 'magnet', 'ghost', 'double']
           this.powerups.push({
             x: 260 + Math.random() * (FIELD_WIDTH - 520),
             y: 140 + Math.random() * (FIELD_HEIGHT - 280),
@@ -517,15 +637,109 @@ export class World {
         if (owner === 0) this.aiHeightMul = Math.max(0.6, this.aiHeightMul * 0.7)
         else this.playerHeightMul = Math.max(0.6, this.playerHeightMul * 0.7)
         break
+      case 'multiball':
+        // Dédouble la balle principale.
+        if (this.balls.length < 4) {
+          const src = this.balls[0] ?? this.ball
+          this.balls.push({
+            x: src.x,
+            y: src.y,
+            vx: -src.vx,
+            vy: src.vy * 0.8,
+            r: src.r,
+            speed: src.speed,
+            owner: src.owner,
+          })
+        }
+        break
+      case 'shield':
+        if (owner === 0) this.playerShield = true
+        else this.aiShield = true
+        break
+      case 'teleport':
+        // La balle saute de l'autre côté du terrain.
+        for (const b of this.balls) {
+          b.x = FIELD_WIDTH - b.x
+          b.vx = -b.vx
+        }
+        break
+      case 'magnet':
+        // La balle est attirée vers le centre de la raquette adverse.
+        if (owner === 0) this.aiMagnet = 1.5
+        else this.playerMagnet = 1.5
+        break
+      case 'ghost':
+        // La balle devient invisible pendant 1.2 s.
+        this.ghostTimer = 1.2
+        break
+      case 'double':
+        // Deux raquettes empilées pour le ramasseur.
+        if (owner === 0) this.playerDouble = true
+        else this.aiDouble = true
+        break
     }
     this.player.height = PADDLE_HEIGHT * this.playerHeightMul
     this.ai.height = PADDLE_HEIGHT * this.aiHeightMul
-    this.push({ type: 'powerup', side, x: p.x, y: p.y, value: ['speed','slow','grow','shrink'].indexOf(p.type) })
+    this.push({ type: 'powerup', side, x: p.x, y: p.y, value: ['speed','slow','grow','shrink','multiball','shield','teleport','magnet','ghost','double'].indexOf(p.type) })
+  }
+
+  buildBricks(): void {
+    const cols = 6
+    const rows = 4
+    const bw = 46
+    const bh = 26
+    const gap = 8
+    const totalW = cols * bw + (cols - 1) * gap
+    const startX = (FIELD_WIDTH - totalW) / 2
+    const startY = (FIELD_HEIGHT - (rows * bh + (rows - 1) * gap)) / 2
+    const colors: Rgb[] = [
+      [1, 0.3, 0.5],
+      [1, 0.6, 0.2],
+      [1, 0.85, 0.2],
+      [0.3, 0.9, 0.5],
+    ]
+    this.bricks = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        this.bricks.push({
+          x: startX + c * (bw + gap),
+          y: startY + r * (bh + gap),
+          w: bw,
+          h: bh,
+          alive: true,
+          color: colors[r % colors.length],
+        })
+      }
+    }
   }
 
   private onGoal(scorer: Side): void {
+    // Bouclier : absorbe le but.
+    if (scorer === 'player' && this.aiShield) {
+      this.aiShield = false
+      this.lastScorer = 'ai'
+      this.phase = 'point'
+      this.serveTimer = POINT_PAUSE * 0.6
+      this.shake = 0.4
+      this.flash = 0.4
+      this.push({ type: 'score', side: 'ai', value: this.scoreAi })
+      return
+    }
+    if (scorer === 'ai' && this.playerShield) {
+      this.playerShield = false
+      this.lastScorer = 'player'
+      this.phase = 'point'
+      this.serveTimer = POINT_PAUSE * 0.6
+      this.shake = 0.4
+      this.flash = 0.4
+      this.push({ type: 'score', side: 'player', value: this.scorePlayer })
+      return
+    }
+
     if (scorer === 'player') this.scorePlayer++
     else this.scoreAi++
+
+    if (this.brickMode) this.buildBricks()
     this.lastScorer = scorer
     this.phase = 'point'
     this.serveTimer = POINT_PAUSE

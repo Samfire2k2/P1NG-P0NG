@@ -48,6 +48,8 @@ export interface EngineState {
   netMessage: string
   /** Mode powerups actif. */
   powerups: boolean
+  /** Mode casse-brique actif. */
+  brickMode: boolean
   /** Orientation du terrain. */
   orientation: 'landscape' | 'portrait'
   /** Durée d'une manche chronométrée (secondes). */
@@ -61,6 +63,7 @@ export interface EngineOptions {
   format: MatchFormat
   muted: boolean
   powerups?: boolean
+  brickMode?: boolean
   orientation?: 'landscape' | 'portrait'
   duration?: number
 }
@@ -114,6 +117,7 @@ export class GameEngine {
   private target: number
   private format: MatchFormat = 'points'
   private powerups = false
+  private brickMode = false
   private orientation: 'landscape' | 'portrait' = 'landscape'
   private duration = 180
   private muted: boolean
@@ -158,6 +162,7 @@ export class GameEngine {
     this.target = options.target
     this.format = options.format
     this.powerups = options.powerups ?? false
+    this.brickMode = options.brickMode ?? false
     this.orientation = options.orientation ?? 'landscape'
     this.duration = options.duration ?? 180
     this.muted = options.muted
@@ -167,6 +172,7 @@ export class GameEngine {
     this.world.difficulty = this.difficulty
     this.world.format = this.format
     this.world.powerupsEnabled = this.powerups
+    this.world.brickMode = this.brickMode
     this.world.roundDuration = this.duration
     this.world.target = this.target
     this.world.reset(this.target)
@@ -215,6 +221,7 @@ export class GameEngine {
       peerConnected: this.peerConnected,
       netMessage: this.netMessage,
       powerups: this.powerups,
+      brickMode: this.brickMode,
       orientation: this.orientation,
       duration: this.duration,
     }
@@ -361,6 +368,14 @@ export class GameEngine {
     this.powerups = enabled
     this.world.powerupsEnabled = enabled
     if (!enabled) this.world.powerups = []
+    this.emit(true)
+  }
+
+  setBrickMode(enabled: boolean): void {
+    this.brickMode = enabled
+    this.world.brickMode = enabled
+    if (enabled) this.world.buildBricks?.()
+    else this.world.bricks = []
     this.emit(true)
   }
 
@@ -667,6 +682,8 @@ export class GameEngine {
     // connue même quand le curseur passe sur les menus.
     window.addEventListener('pointermove', this.onPointerMove, { passive: true })
     this.canvas.addEventListener('pointerdown', this.onPointerDown, { passive: true })
+    this.canvas.addEventListener('touchmove', this.onTouchMove, { passive: true })
+    this.canvas.addEventListener('touchstart', this.onTouchStart, { passive: true })
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
     window.addEventListener('blur', this.onWindowBlur)
@@ -681,6 +698,8 @@ export class GameEngine {
   private detachListeners(): void {
     window.removeEventListener('pointermove', this.onPointerMove)
     this.canvas.removeEventListener('pointerdown', this.onPointerDown)
+    this.canvas.removeEventListener('touchmove', this.onTouchMove)
+    this.canvas.removeEventListener('touchstart', this.onTouchStart)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onWindowBlur)
@@ -710,6 +729,26 @@ export class GameEngine {
       worldY = (cy - view.originY) / view.scale
     }
     this.localPaddleTarget = worldY
+  }
+
+  private onTouchStart = (event: TouchEvent): void => {
+    audio.init()
+    const t = event.touches[0]
+    if (t) {
+      this.pointerClientX = t.clientX
+      this.pointerClientY = t.clientY
+      this.pointerActive = true
+    }
+    if (this.phase === 'paused') this.resume()
+  }
+
+  private onTouchMove = (event: TouchEvent): void => {
+    const t = event.touches[0]
+    if (t) {
+      this.pointerClientX = t.clientX
+      this.pointerClientY = t.clientY
+      this.pointerActive = true
+    }
   }
 
   private onPointerDown = (event: PointerEvent): void => {
@@ -920,6 +959,9 @@ export class GameEngine {
     // Musique : piste de jeu pendant la partie, piste du menu sinon.
     music.setTrack(this.phase === 'playing' ? 'game' : 'menu')
     music.setTension(this.musicTension())
+    const lead =
+      this.world.scorePlayer > this.world.scoreAi ? 'player' : this.world.scorePlayer < this.world.scoreAi ? 'ai' : 'none'
+    music.setLead(lead)
 
     if (this.mode === 'online') {
       const over = this.world.phase === 'over'

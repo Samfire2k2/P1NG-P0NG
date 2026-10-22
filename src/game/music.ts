@@ -92,7 +92,16 @@ class MusicEngine {
   private level = 0.42
   /** Tension de jeu : 0 = calme, 1 = score serré. */
   private tension = 0
+  /** Transposition selon qui mène : +2 si le joueur mène, -2 si l'IA mène. */
+  private leadTranspose = 0
   private switching = false
+
+  /** Le joueur qui mène impose sa couleur harmonique à la piste. */
+  setLead(lead: 'player' | 'ai' | 'none'): void {
+    const next = lead === 'player' ? 2 : lead === 'ai' ? -2 : 0
+    if (next === this.leadTranspose) return
+    this.leadTranspose = next
+  }
 
   /** Change de piste (fondu sortant puis entrée). */
   setTrack(track: MusicTrack): void {
@@ -307,7 +316,11 @@ class MusicEngine {
 
   /** Piste de jeu : basse pilotée, arpège 16e, batterie. */
   private gameStep(bar: number, step: number): Step {
-    const chord = GAME_CHORDS[bar]
+    const baseChord = GAME_CHORDS[bar]
+    const chord = {
+      root: baseChord.root + this.leadTranspose,
+      notes: baseChord.notes.map((n) => n + this.leadTranspose),
+    }
     const notes: MusicNote[] = []
     const hits: MusicHit[] = []
     const t = this.tension

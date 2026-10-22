@@ -18,6 +18,10 @@ interface StartOverlayProps {
   onFormat: (format: MatchFormat, target: number, duration?: number) => void
   powerups: boolean
   onPowerups: (enabled: boolean) => void
+  brickMode: boolean
+  onBrickMode: (enabled: boolean) => void
+  theme: number
+  onTheme: (t: number) => void
   orientation: 'landscape' | 'portrait'
   onOrientation: (o: 'landscape' | 'portrait') => void
   duration: number
@@ -34,6 +38,7 @@ interface StartOverlayProps {
   initialKey: string
   playerName: string
   peerName: string
+  history: { date: string; mode: string; format: string; scorePlayer: number; scoreAi: number; difficulty: string; target: number }[]
   canStart: boolean
   onNameChange: (name: string) => void
   onStartMatch: () => void
@@ -57,6 +62,10 @@ export default function StartOverlay({
   onFormat,
   powerups,
   onPowerups,
+  brickMode,
+  onBrickMode,
+  theme,
+  onTheme,
   orientation,
   onOrientation,
   duration,
@@ -73,6 +82,7 @@ export default function StartOverlay({
   initialKey,
   playerName,
   peerName,
+  history,
   canStart,
   onNameChange,
   onStartMatch,
@@ -277,6 +287,48 @@ export default function StartOverlay({
                   </p>
                 )}
 
+                {/* Mode casse-brique */}
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                    Casse-brique
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onBrickMode(!brickMode)}
+                    className={`glass-button rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                      brickMode ? 'text-white' : 'text-zinc-400'
+                    }`}
+                    style={brickMode ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+                  >
+                    {brickMode ? 'Activé' : 'Désactivé'}
+                  </button>
+                 </div>
+
+                {/* Thème */}
+                <div className="mt-4">
+                  <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                    Thème
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {['Néon', 'Synthwave', 'Rétro', 'Minimal'].map((label, i) => {
+                      const active = theme === i
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => onTheme(i)}
+                          className={`glass-button rounded-lg px-2 py-2 text-xs font-semibold ${
+                            active ? 'text-white' : 'text-zinc-400'
+                          }`}
+                          style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 {/* Orientation */}
                 <div className="mt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
@@ -336,9 +388,31 @@ export default function StartOverlay({
                   <IconPlay className="h-4 w-4" />
                   Jouer
                 </button>
-                <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
-                  Souris ou flèches · <span className="text-zinc-500">Espace</span> = pause
-                </p>
+              {history.length > 0 && (
+                <div className="mt-6 border-t border-white/5 pt-4">
+                  <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                    Historique
+                  </div>
+                  <div className="space-y-1 text-[11px] text-zinc-400">
+                    {history.slice(0, 5).map((h, i) => (
+                      <div key={i} className="flex items-center justify-between">
+                        <span>
+                          {h.mode === 'online' ? 'En ligne' : 'Solo'} · {h.difficulty} ·{' '}
+                          {h.format === 'time' ? 'temps' : `${h.target} pts`}
+                        </span>
+                        <span className="font-mono-game">
+                          {h.scorePlayer} - {h.scoreAi}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Astuce de contrôle */}
+              <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
+                Souris ou flèches · <span className="text-zinc-500">Espace</span> = pause
+              </p>
               </>
             )}
           </div>

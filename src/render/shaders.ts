@@ -110,6 +110,9 @@ uniform float u_flash;
 uniform float u_lead;        // 0 = égalité, 1 = un joueur mène
 uniform vec3 u_leadColor;    // couleur du joueur qui mène
 uniform float u_gridPulse;   // impulsion déclenchée à chaque point
+uniform vec3 u_bgBase;
+uniform vec3 u_gridBase;
+uniform vec3 u_borderBase;
 
 float sdRoundBox(vec2 p, vec2 b, float r) {
   r = min(r, min(b.x, b.y));
@@ -129,7 +132,7 @@ void main() {
   vec2 world = (px - u_origin) / u_scale;
 
   // Fond profond (espace linéaire)
-  vec3 col = vec3(0.0032, 0.0040, 0.0075);
+  vec3 col = u_bgBase * 0.16;
   float vign = 1.0 - smoothstep(0.25, 1.25, length((v_uv - 0.5) * vec2(1.35, 1.0)));
   col += vec3(0.0035, 0.0050, 0.0110) * (1.0 - vign);
 
@@ -140,7 +143,7 @@ void main() {
   col += u_aiColor * dr * 0.022;
 
   // Grille : teinte du joueur qui mène, impulsion lumineuse à chaque point
-  vec3 gridColor = mix(vec3(0.10, 0.16, 0.30), u_leadColor * 0.85, u_lead * 0.72);
+  vec3 gridColor = mix(u_gridBase, u_leadColor * 0.85, u_lead * 0.72);
   float pulse = 1.0 + u_gridPulse * (0.55 + 0.45 * sin(u_time * 9.0));
   float g1 = gridMask(world, 50.0, 1.0);
   float g2 = gridMask(world, 200.0, 1.4);
@@ -156,17 +159,17 @@ void main() {
   float d = sdRoundBox(world - center, halfSize, 26.0);
   float border = 1.0 - smoothstep(0.0, 3.0, abs(d));
   float aura = exp(-abs(d) * 0.035);
-  vec3 borderColor = mix(vec3(0.30, 0.55, 1.0), u_leadColor, u_lead * 0.5);
+  vec3 borderColor = mix(u_borderBase, u_leadColor, u_lead * 0.5);
   col += borderColor * border * 0.55 * (1.0 + u_gridPulse * 1.1);
-  col += vec3(0.16, 0.32, 0.70) * aura * 0.075 * (1.0 + u_gridPulse * 1.6);
+  col += u_borderBase * 0.25 * aura * 0.075 * (1.0 + u_gridPulse * 1.6);
 
   // Ligne médiane pointillée
   float mid = abs(world.x - u_field.x * 0.5);
   float dash = step(0.5, fract(world.y / 110.0));
   float line = (1.0 - smoothstep(0.0, 3.5, mid)) * dash;
-  vec3 lineColor = mix(vec3(0.35, 0.60, 1.0), u_leadColor * 1.15, u_lead * 0.6);
+  vec3 lineColor = mix(u_borderBase, u_leadColor * 1.15, u_lead * 0.6);
   col += lineColor * line * 0.42;
-  col += vec3(0.18, 0.30, 0.62) * exp(-mid * 0.08) * dash * 0.075;
+  col += u_borderBase * 0.6 * exp(-mid * 0.08) * dash * 0.075;
 
   // Impulsion globale
   col += vec3(0.9, 0.95, 1.0) * u_flash * 0.035;

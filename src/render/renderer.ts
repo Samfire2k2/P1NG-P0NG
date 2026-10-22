@@ -39,6 +39,7 @@ export interface RenderSettings {
   vignette: number
   scanlines: number
   grain: number
+  theme: number
 }
 
 export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
@@ -47,6 +48,7 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   vignette: 0.5,
   scanlines: 0.055,
   grain: 0.016,
+  theme: 0,
 }
 
 const mix3 = (
@@ -236,9 +238,11 @@ export class Renderer {
     this.trailCount++
   }
 
+  private settings: RenderSettings = DEFAULT_RENDER_SETTINGS
   private orientation: 'landscape' | 'portrait' = 'landscape'
 
   render(world: World, settings: RenderSettings = DEFAULT_RENDER_SETTINGS, orientation: 'landscape' | 'portrait' = 'landscape'): void {
+    this.settings = settings
     this.orientation = orientation
     const gl = this.gl
     const w = this.width
@@ -299,7 +303,16 @@ export class Renderer {
     this.uBg.f('u_time', world.time)
     this.uBg.v3('u_playerColor', world.playerColor[0], world.playerColor[1], world.playerColor[2])
     this.uBg.v3('u_aiColor', world.aiColor[0], world.aiColor[1], world.aiColor[2])
-    this.uBg.f('u_flash', world.flash)
+    const themes: Array<{ bg: [number, number, number]; grid: [number, number, number]; border: [number, number, number] }> = [
+      { bg: [0.02, 0.025, 0.055], grid: [0.10, 0.16, 0.30], border: [0.30, 0.55, 1.0] },
+      { bg: [0.08, 0.02, 0.12], grid: [0.4, 0.1, 0.5], border: [1.0, 0.3, 0.6] },
+      { bg: [0.0, 0.05, 0.0], grid: [0.0, 0.3, 0.1], border: [0.2, 0.8, 0.3] },
+      { bg: [0.05, 0.05, 0.06], grid: [0.15, 0.15, 0.18], border: [0.5, 0.5, 0.6] },
+    ]
+    const theme = themes[this.settings.theme ?? 0] ?? themes[0]
+    this.uBg.v3('u_bgBase', theme.bg[0], theme.bg[1], theme.bg[2])
+    this.uBg.v3('u_gridBase', theme.grid[0], theme.grid[1], theme.grid[2])
+    this.uBg.v3('u_borderBase', theme.border[0], theme.border[1], theme.border[2])
     // Écho du terrain : la grille prend la teinte du joueur qui mène et
     // pulse à chaque point marqué.
     const diff = world.scorePlayer - world.scoreAi
@@ -434,7 +447,17 @@ export class Renderer {
 
     this.pushPaddle(player, world.playerColor, world.paddleFlashPlayer, this.orientation)
 
+    if (world.playerDouble) {
+      const p2 = { x: player.x, y: player.y + (this.orientation === 'portrait' ? PADDLE_HEIGHT * 0.6 : PADDLE_HEIGHT * 0.6), height: player.height }
+      this.pushPaddle(p2, world.playerColor, 0, this.orientation)
+    }
+
     this.pushPaddle(ai, world.aiColor, world.paddleFlashAi, this.orientation)
+
+    if (world.aiDouble) {
+      const a2 = { x: ai.x, y: ai.y + (this.orientation === 'portrait' ? PADDLE_HEIGHT * 0.6 : PADDLE_HEIGHT * 0.6), height: ai.height }
+      this.pushPaddle(a2, world.aiColor, 0, this.orientation)
+    }
 
     const ballColor = ballColorOf(world)
     const hot: [number, number, number] = [
@@ -442,23 +465,28 @@ export class Renderer {
       lerp(ballColor[1], 1, 0.62),
       lerp(ballColor[2], 1, 0.62),
     ]
-    const ballDraw = this.orientation === 'portrait'
-      ? { x: ball.y, y: FIELD_WIDTH - ball.x }
-      : { x: ball.x, y: ball.y }
-    this.core.push(
-      ballDraw.x,
-      ball.y,
-      ball.r,
-      ball.r,
-      hot[0],
-      hot[1],
-      hot[2],
-      1,
-      3,
-      ball.r,
-      0,
-      2.1,
-    )
+    const ghostAlpha = world.ghostTimer > 0 ? 0.12 : 1
+    for (const b of world.balls) {
+      const ballDraw = this.orientation === 'portrait'
+        ? { x: b.y, y: FIELD_WIDTH - b.x }
+        : { x: b.x, y: b.y }
+      this.core.push(
+        ballDraw.x,
+        ballDraw.y,
+        b.r,
+        b.r,
+        hot[0],
+        hot[1],
+        hot[2],
+        ghostAlpha,
+        3,
+        b.r,
+        0,
+        2.1,
+      )
+      // Halo
+      this.pushGlow(ballDraw.x, ballDraw.y, b.r * 3.4, b.r * 3.4, ballColorOf(world), 0.4 * ghostAlpha)
+    }
 
     // Confettis
     for (let i = 0; i < particles.count; i++) {
@@ -488,7 +516,22 @@ export class Renderer {
       )
     }
 
-    // Powerups
+    // Briques
+    for (const brick of world.bricks) {
+      if (!brick.alive) continue
+      let bx = brick.x
+      let by = brick.y
+      let bw = brick.w
+      let bh = brick.h
+      if (this.orientation === 'portrait') {
+        bx = by
+        by = FIELD_WIDTH - (brick.x + brick.w)
+        const tmp = bw
+        bw = bh
+        bh = tmp
+      }
+      this.core.push(bx + bw / 2, by + bh / 2, bw / 2, bh / 2, brick.color[0], brick.color[1], brick.color[2], 0.9, 4, Math.min(bw, bh) / 2, 0, 1.2)
+    }
     const powerupColors: Record<string, [number, number, number]> = {
       speed: [1, 0.85, 0.2],
       slow: [0.3, 0.7, 1],
