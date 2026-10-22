@@ -436,11 +436,11 @@ export default function App() {
           </h1>
           <p className="mt-4 text-sm tracking-[0.4em] text-zinc-500 uppercase">pong néon</p>
           <button
-            className="mt-8 rounded bg-[var(--accent)] px-6 py-2 text-white font-medium hover:bg-opacity-90 transition-colors"
+            className="mt-8 rounded bg-[var(--accent)] px-6 py-2 text-white font-medium hover:bg-opacity-90 transition-colors shadow-lg"
             onClick={() => setSplash(false)}
             id="start-splash"
           >
-            START
+            <span className="relative inline-block" style={{ textShadow: '0 0 10px rgba(255,255,255,0.8)' }}>START</span>
           </button>
         </div>
       )}
