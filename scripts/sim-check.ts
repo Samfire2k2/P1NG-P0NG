@@ -12,9 +12,20 @@ import {
   PLAYER_MAX_SPEED,
   ROUND_DURATION,
 } from '../src/game/constants.ts'
-import { World } from '../src/game/world.ts'
+import { createRng } from '../src/game/math.ts'
+import { World, type Phase } from '../src/game/world.ts'
 
 let failures = 0
+
+/**
+ * Lit la phase du monde.
+ *
+ * `w.phase = 'play'` fait narrowing sur la propriété : TypeScript la fige
+ * alors sur `'play'` et ne l'élargit plus après un appel de méthode, même si
+ * `step()` la modifie. Passer par cette fonction relit la propriété avec son
+ * type complet (`Phase`).
+ */
+const phaseOf = (w: World): Phase => w.phase
 
 function check(condition: boolean, message: string): void {
   if (!condition) {
@@ -145,11 +156,13 @@ console.log('\n— Match complet —')
   w.reset(7)
   w.frozen = false
   w.difficulty = 'moyen'
+  // Tirage déterministe pour le « joueur » : la partie doit être reproductible.
+  const rng = createRng(2024)
   let steps = 0
   let rallies = 0
   let aiReturns = 0
-  while (w.phase !== 'over' && steps < 240 * 300) {
-    w.playerTargetY = predictAt(w, w.player.x) + (Math.random() - 0.5) * 26
+  while (phaseOf(w) !== 'over' && steps < 240 * 300) {
+    w.playerTargetY = predictAt(w, w.player.x) + (rng() - 0.5) * 26
     w.step(FIXED_DT)
     for (const ev of w.drainEvents()) {
       if (ev.type === 'score') rallies++
@@ -160,7 +173,7 @@ console.log('\n— Match complet —')
   console.log(
     `    → ${rallies} points, ${aiReturns} retours de l'IA (≈ ${(aiReturns / Math.max(rallies, 1)).toFixed(1)} échanges par point)`,
   )
-  check(w.phase === 'over', `le match se termine (${w.scorePlayer} - ${w.scoreAi})`)
+  check(phaseOf(w) === 'over', `le match se termine (${w.scorePlayer} - ${w.scoreAi})`)
   check(
     Math.max(w.scorePlayer, w.scoreAi) === 7,
     `le score final atteint la cible (${w.scorePlayer} - ${w.scoreAi})`,
@@ -178,15 +191,17 @@ console.log('\n— Ordre de difficulté de l’IA —')
     w.reset(11)
     w.frozen = false
     w.difficulty = difficulty
+    // Même tirage pour chaque niveau : seule la difficulté change.
+    const rng = createRng(777)
     let returned = 0
     const total = 24
     for (let s = 0; s < total; s++) {
       w.phase = 'play'
       w.aiState.aimLocked = false
       w.ball.x = FIELD_WIDTH * 0.62
-      w.ball.y = FIELD_HEIGHT * (0.25 + Math.random() * 0.5)
+      w.ball.y = FIELD_HEIGHT * (0.25 + rng() * 0.5)
       w.ball.speed = 620
-      const angle = (Math.random() - 0.5) * 0.5
+      const angle = (rng() - 0.5) * 0.5
       w.ball.vx = Math.cos(angle) * w.ball.speed
       w.ball.vy = Math.sin(angle) * w.ball.speed
       w.ai.y = FIELD_HEIGHT / 2
@@ -236,7 +251,7 @@ console.log('\n— Round chronométré —')
     w.step(FIXED_DT)
     w.drainEvents()
   }
-  check(w.phase === 'over', 'le round s’arrête quand le chronomètre tombe à zéro')
+  check(phaseOf(w) === 'over', 'le round s’arrête quand le chronomètre tombe à zéro')
   check(w.timeLeft === 0, 'le chronomètre affiche zéro')
   check(w.winner === 'player' && !w.draw, 'le meilleur score gagne à la fin du round')
 }
@@ -258,7 +273,10 @@ console.log('\n— Round chronométré —')
     w.step(FIXED_DT)
     w.drainEvents()
   }
-  check(w.phase === 'over' && w.draw && w.winner === null, 'une égalité à la fin du round est signalée')
+  check(
+    phaseOf(w) === 'over' && w.draw && w.winner === null,
+    'une égalité à la fin du round est signalée',
+  )
 }
 {
   // En mode « temps », atteindre le nombre de points ne termine pas la manche.
@@ -275,7 +293,7 @@ console.log('\n— Round chronométré —')
   w.step(FIXED_DT)
   w.drainEvents()
   check(w.scorePlayer === 11, 'le point est compté')
-  check(w.phase !== 'over', 'en mode temps, atteindre la cible ne termine pas la manche')
+  check(phaseOf(w) !== 'over', 'en mode temps, atteindre la cible ne termine pas la manche')
 }
 {
   // En mode « points », le chronomètre est désactivé.
@@ -334,6 +352,70 @@ console.log('\n— Écho du terrain —')
   check(w.gridPulse < pulse, 'l’impulsion de la grille s’amortit')
 }
 
+console.log('\n— Reproductibilité —')
+{
+  // Empreinte d'une partie : phase, score, points, retours de l'IA, pas.
+  const fingerprint = (seed: number): string => {
+    const w = new World()
+    w.setSeed(seed)
+    w.reset(7)
+    w.frozen = false
+    w.difficulty = 'moyen'
+    const rng = createRng(seed)
+    let steps = 0
+    let rallies = 0
+    let aiReturns = 0
+    while (phaseOf(w) !== 'over' && steps < 240 * 300) {
+      w.playerTargetY = predictAt(w, w.player.x) + (rng() - 0.5) * 26
+      w.step(FIXED_DT)
+      for (const ev of w.drainEvents()) {
+        if (ev.type === 'score') rallies++
+        if (ev.type === 'paddleHit' && ev.side === 'ai') aiReturns++
+      }
+      steps++
+    }
+    return `${phaseOf(w)}|${w.scorePlayer}-${w.scoreAi}|${rallies}|${aiReturns}|${steps}`
+  }
+  const a = fingerprint(2024)
+  const b = fingerprint(2024)
+  check(a === b, `deux parties de même graine sont identiques (${a})`)
+
+  // Le service tire son côté de la graine : il doit être stable.
+  const serveTo = (seed: number): string => {
+    const w = new World()
+    w.setSeed(seed)
+    w.reset(11)
+    return w.serveTo
+  }
+  check(serveTo(2024) === serveTo(2024), 'le service est stable pour une graine donnée')
+
+  // La simulation headless ne doit jamais toucher au générateur global :
+  // sinon le résultat change d'une machine (ou d'un run) à l'autre.
+  const realRandom = Math.random
+  let usedGlobal = false
+  Math.random = () => {
+    usedGlobal = true
+    return 0.5
+  }
+  try {
+    const w = new World()
+    w.setSeed(2024)
+    w.reset(7)
+    w.frozen = false
+    w.difficulty = 'moyen'
+    let steps = 0
+    while (phaseOf(w) !== 'over' && steps < 240 * 300) {
+      w.playerTargetY = predictAt(w, w.player.x)
+      w.step(FIXED_DT)
+      w.drainEvents()
+      steps++
+    }
+    check(!usedGlobal, 'la simulation n’utilise pas Math.random()')
+  } finally {
+    Math.random = realRandom
+  }
+}
+
 console.log('\n— Compte à rebours de service —')
 {
   const w = new World()
@@ -342,14 +424,14 @@ console.log('\n— Compte à rebours de service —')
   w.frozen = false
   const seq: number[] = []
   let steps = 0
-  while (w.phase === 'serve' && steps < 240 * 5) {
+  while (phaseOf(w) === 'serve' && steps < 240 * 5) {
     w.step(FIXED_DT)
     w.drainEvents()
     if (seq[seq.length - 1] !== w.countdown) seq.push(w.countdown)
     steps++
   }
   check(seq.join(',') === '2,1,0', `le compte à rebours passe par 2, 1, 0 (${seq.join(',')})`)
-  check(w.phase === 'play', 'la balle est servie une fois le compte à rebours terminé')
+  check(phaseOf(w) === 'play', 'la balle est servie une fois le compte à rebours terminé')
   check(steps > 240 && steps < 240 * 3, `le compte à rebours dure environ une seconde (${steps} pas)`)
 }
 

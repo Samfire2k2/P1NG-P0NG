@@ -21,6 +21,11 @@ export class ParticleSystem {
   /** 0 = étincelle, 1 = halo doux, 2 = confetti carré */
   readonly kind = new Uint8Array(PARTICLE_CAPACITY)
   count = 0
+  /**
+   * Source d'aléatoire. Par défaut `Math.random` (rendu temps réel) ; la
+   * simulation headless injecte un générateur déterministe.
+   */
+  rng: () => number = Math.random
 
   clear(): void {
     this.count = 0
@@ -79,15 +84,15 @@ export class ParticleSystem {
     const drag = opts.drag ?? 2.4
     const kind = opts.kind ?? 0
     for (let i = 0; i < amount; i++) {
-      const a = angle + (Math.random() - 0.5) * spread
-      const s = speed * (0.35 + Math.random() * 0.85)
+      const a = angle + (this.rng() - 0.5) * spread
+      const s = speed * (0.35 + this.rng() * 0.85)
       this.push(
         x,
         y,
         Math.cos(a) * s,
         Math.sin(a) * s,
-        life * (0.6 + Math.random() * 0.7),
-        size * (0.6 + Math.random() * 0.8),
+        life * (0.6 + this.rng() * 0.7),
+        size * (0.6 + this.rng() * 0.8),
         color[0],
         color[1],
         color[2],
@@ -126,15 +131,15 @@ export class ParticleSystem {
   /** Confettis de fin de match. */
   confetti(x: number, y: number, color: [number, number, number], amount = 120): void {
     for (let i = 0; i < amount; i++) {
-      const a = Math.random() * TAU
-      const s = 180 + Math.random() * 720
+      const a = this.rng() * TAU
+      const s = 180 + this.rng() * 720
       this.push(
         x,
         y,
         Math.cos(a) * s,
         Math.sin(a) * s - 220,
-        1.6 + Math.random() * 1.4,
-        7 + Math.random() * 9,
+        1.6 + this.rng() * 1.4,
+        7 + this.rng() * 9,
         color[0],
         color[1],
         color[2],

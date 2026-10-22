@@ -103,8 +103,12 @@ export interface AiState {
 }
 
 /**
- * Monde de simulation : purement déterministe et sans dépendance au DOM.
+ * Monde de simulation : sans dépendance au DOM.
  * Le renderer et l'audio lisent l'état ; ils ne le modifient pas.
+ *
+ * Déterminisme : par défaut l'aléatoire vient de `Math.random` (partie en
+ * direct). `setSeed` installe un générateur déterministe — la simulation
+ * headless (`npm run sim`) l'utilise pour être reproductible d'un run à l'autre.
  */
 export class World {
   phase: Phase = 'serve'
@@ -202,16 +206,24 @@ export class World {
   netPaddleY: number | null = null
 
   aiState: AiState = { targetY: FIELD_HEIGHT / 2, reactionTimer: 0, aimError: 0, aimLocked: false }
-  private rng: () => number = createRng(0x9e3779b9)
+  /**
+   * Source d'aléatoire du monde. Par défaut `Math.random` (partie en direct) ;
+   * `setSeed` installe un générateur déterministe pour la simulation headless.
+   */
+  private rng: () => number = Math.random
 
   constructor() {
     this.player = { x: PLAYER_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.playerColor }
     this.ai = { x: FIELD_WIDTH - AI_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.aiColor }
     this.balls = [{ x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }]
+    // Les particules suivent la même source d'aléatoire que le monde.
+    this.particles.rng = this.rng
   }
 
   setSeed(seed: number): void {
     this.rng = createRng(seed >>> 0)
+    // Les particules partagent la graine : la simulation reste reproductible.
+    this.particles.rng = this.rng
   }
 
   setPlayerColor(hsv: Hsv): void {
@@ -415,7 +427,7 @@ export class World {
 
   private launchServe(): void {
     const dir = this.serveTo === 'player' ? -1 : 1
-    const angle = randRange(-0.36, 0.36)
+    const angle = randRange(-0.36, 0.36, this.rng)
     this.ball.x = FIELD_WIDTH / 2
     this.ball.y = FIELD_HEIGHT / 2
     this.ball.speed = BALL_START_SPEED
@@ -585,14 +597,14 @@ export class World {
     if (this.phase === 'play') {
       this.spawnTimer -= dt
       if (this.spawnTimer <= 0) {
-        this.spawnTimer = 6 + Math.random() * 4
+        this.spawnTimer = 6 + this.rng() * 4
         const alive = this.powerups.filter((p) => p.alive)
         if (alive.length < 3) {
           const types: PowerupType[] = ['speed', 'slow', 'grow', 'shrink', 'multiball', 'shield', 'teleport', 'magnet', 'ghost', 'double']
           this.powerups.push({
-            x: 260 + Math.random() * (FIELD_WIDTH - 520),
-            y: 140 + Math.random() * (FIELD_HEIGHT - 280),
-            type: types[Math.floor(Math.random() * types.length)],
+            x: 260 + this.rng() * (FIELD_WIDTH - 520),
+            y: 140 + this.rng() * (FIELD_HEIGHT - 280),
+            type: types[Math.floor(this.rng() * types.length)],
             ttl: 9,
             alive: true,
           })
@@ -807,7 +819,7 @@ export class World {
 
     state.reactionTimer -= dt
     if (state.reactionTimer <= 0) {
-      state.reactionTimer = profile.reaction * randRange(0.75, 1.35)
+      state.reactionTimer = profile.reaction * randRange(0.75, 1.35, this.rng)
 
       if (this.ball.vx > 0) {
         // Balle en approche : on fige une erreur de visée pour tout l'échange,
@@ -823,7 +835,7 @@ export class World {
         // Balle chez le joueur : recentrage, comme un humain qui attend.
         state.aimLocked = false
         state.aimError = 0
-        state.targetY = FIELD_HEIGHT / 2 + randRange(-40, 40)
+        state.targetY = FIELD_HEIGHT / 2 + randRange(-40, 40, this.rng)
       }
     }
 

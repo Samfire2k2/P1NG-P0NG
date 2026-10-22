@@ -155,7 +155,11 @@ try {
   check(accentBefore !== accentAfter, `la couleur d'accent change avec la teinte (${accentBefore.trim()} -> ${accentAfter.trim()})`)
 
   // --- Round chronométré : chronomètre, couleur de la balle, tension ---
-  await page.getByRole('button', { name: '3 min', exact: true }).click()
+  // L'interface propose une durée en minutes puis un bouton « Activer ».
+  const minutesInput = page.locator('input[type="number"]').first()
+  await minutesInput.fill('3')
+  await wait(300)
+  await page.getByRole('button', { name: /^Activer$/i }).click()
   await wait(400)
   await page.getByRole('button', { name: /^Jouer$/i }).click()
   await wait(2000)

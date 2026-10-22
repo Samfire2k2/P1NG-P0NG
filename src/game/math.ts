@@ -14,7 +14,15 @@ export const TAU = Math.PI * 2
 export const damp = (current: number, target: number, lambda: number, dt: number): number =>
   lerp(current, target, 1 - Math.exp(-lambda * dt))
 
-export const randRange = (min: number, max: number): number => min + Math.random() * (max - min)
+/**
+ * Tirage dans une plage. `rng` permet d'utiliser un générateur déterministe
+ * (voir `createRng`) : la simulation headless doit rester reproductible.
+ */
+export const randRange = (
+  min: number,
+  max: number,
+  rng: () => number = Math.random,
+): number => min + rng() * (max - min)
 
 /** Générateur pseudo-aléatoire déterministe (mulberry32) pour la sim headless. */
 export function createRng(seed: number): () => number {

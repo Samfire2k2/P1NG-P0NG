@@ -54,6 +54,7 @@ const readEngine = (page) =>
       peerName: state.peerName,
       peerHue: state.peerColor.h,
       ball: [world.ball.x, world.ball.y],
+      worldPhase: world.phase,
       fps: state.fps,
     }
   })
@@ -111,7 +112,7 @@ try {
   await host.getByLabel('Ton pseudo').fill('Nova')
   await host.getByLabel('Teinte (arc-en-ciel)').fill('300')
   await wait(300)
-  await host.getByRole('button', { name: /Créer un salon/i }).click()
+  await host.getByRole('button', { name: 'Créer un salon', exact: true }).click()
   await wait(2500)
 
   const inviteValue = await host.getByLabel("Lien d'invitation").inputValue()
@@ -196,8 +197,25 @@ try {
   check(hostPixels > 0, `la balle est rendue chez l'hôte (${hostPixels} px)`)
   check(guestPixels > 0, `la balle est rendue chez l'invité (${guestPixels} px)`)
 
-  // --- Les scores sont synchronisés (même Convention des deux côtés) ---
+  // --- Les scores sont synchronisés (même convention des deux côtés) ---
+  // Les deux raquettes sont pilotées à la souris : sans déplacement, la balle
+  // sortirait systématiquement du terrain et le test « balle en jeu » échouerait.
+  const trackBall = async (page) => {
+    const state = await readEngine(page)
+    if (!state) return
+    const box = await page.locator('canvas').boundingBox()
+    if (!box) return
+    // On place la raquette (colonne de la balle) à hauteur de la balle.
+    const side = state.role === 'guest' ? 0.85 : 0.15
+    await page.mouse.move(box.x + box.width * side, box.y + box.height * (state.ball[1] / 900))
+  }
+  const track = setInterval(() => {
+    void trackBall(host)
+    void trackBall(guest)
+  }, 120)
   await wait(6000)
+  clearInterval(track)
+
   const hostScores = await readEngine(host)
   const guestScores = await readEngine(guest)
   check(
@@ -212,6 +230,10 @@ try {
   check(
     Math.abs(hostBall[0] - 800) > 30 || Math.abs(guestBall[0] - 800) > 30,
     `la balle est en jeu et non garée (hôte x=${Math.round(hostBall[0])} / invité x=${Math.round(guestBall[0])})`,
+  )
+  check(
+    hostScores?.worldPhase !== 'serve',
+    `la manche a quitté le service (hôte phase=${hostScores?.worldPhase})`,
   )
 
   // --- Le HUD associe le bon score au bon côté (gauche = hôte) ---
