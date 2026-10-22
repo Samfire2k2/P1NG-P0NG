@@ -265,6 +265,14 @@ export default function App() {
     const t = window.setTimeout(() => setSplash(false), 2200)
     return () => window.clearTimeout(t)
   }, [])
+  
+  // Ajout d'un bouton START au splash screen - user can click to start
+  useEffect(() => {
+    const startBtn = document.getElementById('start-splash')
+    if (startBtn) {
+      startBtn.addEventListener('click', () => setSplash(false))
+    }
+  }, [])
 
   // Persistance
   useEffect(() => {
@@ -427,6 +435,13 @@ export default function App() {
             P1NG-P0NG
           </h1>
           <p className="mt-4 text-sm tracking-[0.4em] text-zinc-500 uppercase">pong néon</p>
+          <button
+            className="mt-8 rounded bg-[var(--accent)] px-6 py-2 text-white font-medium hover:bg-opacity-90 transition-colors"
+            onClick={() => setSplash(false)}
+            id="start-splash"
+          >
+            START
+          </button>
         </div>
       )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
