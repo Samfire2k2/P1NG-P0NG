@@ -55,6 +55,7 @@ export const NET_EVENT = {
   WIN: 6,
   LOSE: 7,
   DRAW: 8,
+  POWERUP: 9,
 } as const
 
 /** Profil du joueur transmis à l'adversaire (pseudo + couleur). */

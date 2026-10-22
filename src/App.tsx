@@ -19,6 +19,12 @@ interface Settings {
   target: number
   /** Format de la manche : au nombre de points ou chronométré. */
   format: MatchFormat
+  /** Durée d'une manche chronométrée (secondes). */
+  duration: number
+  /** Mode powerups. */
+  powerups: boolean
+  /** Orientation du terrain. */
+  orientation: 'landscape' | 'portrait'
   muted: boolean
   glow: number
 }
@@ -28,6 +34,9 @@ const DEFAULT_SETTINGS: Settings = {
   difficulty: 'moyen',
   target: 11,
   format: 'points',
+  duration: 180,
+  powerups: false,
+  orientation: 'landscape',
   muted: false,
   glow: 1,
 }
@@ -46,6 +55,9 @@ function loadSettings(): Settings {
       difficulty,
       target: typeof parsed.target === 'number' ? parsed.target : DEFAULT_SETTINGS.target,
       format: parsed.format === 'time' ? 'time' : 'points',
+      duration: typeof parsed.duration === 'number' ? parsed.duration : DEFAULT_SETTINGS.duration,
+      powerups: Boolean(parsed.powerups),
+      orientation: parsed.orientation === 'portrait' ? 'portrait' : 'landscape',
       muted: Boolean(parsed.muted),
       glow: typeof parsed.glow === 'number' ? parsed.glow : DEFAULT_SETTINGS.glow,
     }
@@ -108,6 +120,9 @@ export default function App() {
         difficulty: initial.difficulty,
         target: initial.target,
         format: initial.format,
+        duration: initial.duration,
+        powerups: initial.powerups,
+        orientation: initial.orientation,
         muted: initial.muted,
       })
     } catch (error) {
@@ -168,6 +183,17 @@ export default function App() {
     })
   }, [settings.glow])
 
+  // Powerups / orientation / durée
+  useEffect(() => {
+    engineRef.current?.setPowerups(settings.powerups)
+  }, [settings.powerups])
+  useEffect(() => {
+    engineRef.current?.setOrientation(settings.orientation)
+  }, [settings.orientation])
+  useEffect(() => {
+    engineRef.current?.setDuration(settings.duration)
+  }, [settings.duration])
+
   const handleColorChange = useCallback((h: number, s: number, v: number) => {
     setSettings((prev) => ({ ...prev, color: { h, s, v } }))
     engineRef.current?.setColor({ h, s, v })
@@ -205,11 +231,28 @@ export default function App() {
     audio.click()
   }, [])
 
-  /** Change le format : au nombre de points, ou round chronométré de 3 minutes. */
-  const handleFormat = useCallback((format: MatchFormat, target: number) => {
-    setSettings((prev) => ({ ...prev, format, target }))
-    engineRef.current?.setFormat(format, target)
+  /** Change le format : au nombre de points, ou round chronométré. */
+  const handleFormat = useCallback((format: MatchFormat, target: number, duration?: number) => {
+    setSettings((prev) => ({ ...prev, format, target, duration: duration ?? prev.duration }))
+    engineRef.current?.setFormat(format, target, duration ?? settingsRef.current.duration)
     audio.click()
+  }, [])
+
+  const handlePowerups = useCallback((enabled: boolean) => {
+    setSettings((prev) => ({ ...prev, powerups: enabled }))
+    engineRef.current?.setPowerups(enabled)
+    audio.click()
+  }, [])
+
+  const handleOrientation = useCallback((orientation: 'landscape' | 'portrait') => {
+    setSettings((prev) => ({ ...prev, orientation }))
+    engineRef.current?.setOrientation(orientation)
+    audio.click()
+  }, [])
+
+  const handleDuration = useCallback((seconds: number) => {
+    setSettings((prev) => ({ ...prev, duration: seconds }))
+    engineRef.current?.setDuration(seconds)
   }, [])
 
   const handleToggleMute = useCallback(() => {
@@ -311,6 +354,12 @@ export default function App() {
           onColorCommit={handleColorCommit}
           onDifficulty={handleDifficulty}
           onFormat={handleFormat}
+          powerups={settings.powerups}
+          onPowerups={handlePowerups}
+          orientation={settings.orientation}
+          onOrientation={handleOrientation}
+          duration={settings.duration}
+          onDuration={handleDuration}
           onGlow={(value) => setSettings((prev) => ({ ...prev, glow: value }))}
           glow={settings.glow}
           inviteLink={inviteLink}

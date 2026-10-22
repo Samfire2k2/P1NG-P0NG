@@ -8,17 +8,25 @@ export interface View {
   originY: number
   width: number
   height: number
+  orientation: 'landscape' | 'portrait'
 }
 
-/** Mise en page "contain" : le terrain 16:9 est centré, le fond occupe le reste. */
-export function computeView(width: number, height: number): View {
-  const scale = Math.min(width / FIELD_WIDTH, height / FIELD_HEIGHT)
+/** Mise en page "contain" : le terrain est centré, le fond occupe le reste. */
+export function computeView(
+  width: number,
+  height: number,
+  orientation: 'landscape' | 'portrait' = 'landscape',
+): View {
+  const fw = orientation === 'portrait' ? FIELD_HEIGHT : FIELD_WIDTH
+  const fh = orientation === 'portrait' ? FIELD_WIDTH : FIELD_HEIGHT
+  const scale = Math.min(width / fw, height / fh)
   return {
     scale,
-    originX: (width - FIELD_WIDTH * scale) / 2,
-    originY: (height - FIELD_HEIGHT * scale) / 2,
+    originX: (width - fw * scale) / 2,
+    originY: (height - fh * scale) / 2,
     width,
     height,
+    orientation,
   }
 }
 

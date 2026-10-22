@@ -15,7 +15,13 @@ interface StartOverlayProps {
   onColorChange: (h: number, s: number, v: number) => void
   onColorCommit: () => void
   onDifficulty: (d: Difficulty) => void
-  onFormat: (format: MatchFormat, target: number) => void
+  onFormat: (format: MatchFormat, target: number, duration?: number) => void
+  powerups: boolean
+  onPowerups: (enabled: boolean) => void
+  orientation: 'landscape' | 'portrait'
+  onOrientation: (o: 'landscape' | 'portrait') => void
+  duration: number
+  onDuration: (seconds: number) => void
   onGlow: (value: number) => void
   glow: number
   inviteLink: string
@@ -49,6 +55,12 @@ export default function StartOverlay({
   onColorCommit,
   onDifficulty,
   onFormat,
+  powerups,
+  onPowerups,
+  orientation,
+  onOrientation,
+  duration,
+  onDuration,
   onGlow,
   glow,
   inviteLink,
@@ -68,7 +80,7 @@ export default function StartOverlay({
   const netStatus: NetStatus = state.netStatus
 
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center overflow-y-auto bg-[#05060a]/55 p-4 backdrop-blur-md">
+    <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-[#05060a]/55 p-4 pt-8 backdrop-blur-md">
       <div className="glass-panel animate-rise my-6 w-full max-w-3xl rounded-3xl p-6 sm:p-8">
         {/* Onglets de mode */}
         <div className="mb-7 grid grid-cols-2 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
@@ -120,11 +132,10 @@ export default function StartOverlay({
                 </div>
                 <h1 className="ping-title mt-3 text-5xl leading-[0.9] font-extrabold tracking-tight sm:text-6xl">
                   P1NG-P0NG
-                  <span className="block text-3xl sm:text-4xl">pong néon</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Le Pong de base, en néon. Quatre niveaux de difficulté, une balle qui accélère à
-                  chaque rebond, et la couleur de ta raquette à choisir.
+                  Le Pong de base, en néon. 4 niveaux de difficulté, une balle qui accélère à
+                  chaque rebond et la couleur de ta raquette à choisir. Prêt?
                 </p>
               </>
             ) : (
@@ -222,6 +233,73 @@ export default function StartOverlay({
                       points.
                     </p>
                   )}
+                </div>
+
+                {/* Durée (mode temps) */}
+                {state.format === 'time' && (
+                  <div className="mt-4">
+                    <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                      Durée (secondes)
+                    </div>
+                    <input
+                      type="number"
+                      min={30}
+                      max={3600}
+                      step={30}
+                      value={duration}
+                      onChange={(e) => onDuration(Number(e.target.value))}
+                      className="glass-button w-full rounded-lg px-3 py-2 text-sm text-zinc-200"
+                    />
+                  </div>
+                )}
+
+                {/* Powerups */}
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                    Powerups
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onPowerups(!powerups)}
+                    className={`glass-button rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                      powerups ? 'text-white' : 'text-zinc-400'
+                    }`}
+                    style={powerups ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+                  >
+                    {powerups ? 'Activés' : 'Désactivés'}
+                  </button>
+                </div>
+                {powerups && (
+                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
+                    Des bonus apparaissent sur le terrain. La balle qui les traverse active
+                    l’effet : accélération, ralentissement, agrandissement ou rétrécissement de
+                    raquette.
+                  </p>
+                )}
+
+                {/* Orientation */}
+                <div className="mt-4">
+                  <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                    Orientation
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(['landscape', 'portrait'] as const).map((o) => {
+                      const active = orientation === o
+                      return (
+                        <button
+                          key={o}
+                          type="button"
+                          onClick={() => onOrientation(o)}
+                          className={`glass-button rounded-lg px-2 py-2 text-xs font-semibold ${
+                            active ? 'text-white' : 'text-zinc-400'
+                          }`}
+                          style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+                        >
+                          {o === 'landscape' ? 'Paysage' : 'Portrait'}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
 
                 {/* Intensité du glow */}

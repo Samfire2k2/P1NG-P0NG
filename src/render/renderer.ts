@@ -236,12 +236,15 @@ export class Renderer {
     this.trailCount++
   }
 
-  render(world: World, settings: RenderSettings = DEFAULT_RENDER_SETTINGS): void {
+  private orientation: 'landscape' | 'portrait' = 'landscape'
+
+  render(world: World, settings: RenderSettings = DEFAULT_RENDER_SETTINGS, orientation: 'landscape' | 'portrait' = 'landscape'): void {
+    this.orientation = orientation
     const gl = this.gl
     const w = this.width
     const h = this.height
 
-    const view = computeView(w, h)
+    const view = computeView(w, h, orientation)
     const scale = view.scale
     const shake = world.shake
     const shakeX = Math.sin(world.time * 97) * shake * 14
@@ -292,7 +295,7 @@ export class Renderer {
     this.uBg.v2('u_resolution', this.width, this.height)
     this.uBg.v2('u_origin', originX, originY)
     this.uBg.f('u_scale', scale)
-    this.uBg.v2('u_field', FIELD_WIDTH, FIELD_HEIGHT)
+    this.uBg.v2('u_field', this.orientation === 'portrait' ? FIELD_HEIGHT : FIELD_WIDTH, this.orientation === 'portrait' ? FIELD_WIDTH : FIELD_HEIGHT)
     this.uBg.f('u_time', world.time)
     this.uBg.v3('u_playerColor', world.playerColor[0], world.playerColor[1], world.playerColor[2])
     this.uBg.v3('u_aiColor', world.aiColor[0], world.aiColor[1], world.aiColor[2])
@@ -330,10 +333,20 @@ export class Renderer {
       for (let k = 0; k < last; k++) {
         const i0 = (this.trailHead + k) % TRAIL_LENGTH
         const i1 = (this.trailHead + k + 1) % TRAIL_LENGTH
-        const x0 = this.trailX[i0]
-        const y0 = this.trailY[i0]
-        const x1 = this.trailX[i1]
-        const y1 = this.trailY[i1]
+        const x0w = this.trailX[i0]
+        const y0w = this.trailY[i0]
+        const x1w = this.trailX[i1]
+        const y1w = this.trailY[i1]
+        let x0 = x0w
+        let y0 = y0w
+        let x1 = x1w
+        let y1 = y1w
+        if (this.orientation === 'portrait') {
+          x0 = y0w
+          y0 = FIELD_WIDTH - x0w
+          x1 = y1w
+          y1 = FIELD_WIDTH - x1w
+        }
         const dx = x1 - x0
         const dy = y1 - y0
         const len = Math.hypot(dx, dy)
@@ -367,12 +380,21 @@ export class Renderer {
     }
 
     // Halos des paddles
-    this.pushGlow(player.x, player.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.playerColor, 0.34)
-    this.pushGlow(ai.x, ai.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34)
+    const playerPos = this.orientation === 'portrait'
+      ? { x: player.y, y: FIELD_WIDTH - player.x }
+      : { x: player.x, y: player.y }
+    const aiPos = this.orientation === 'portrait'
+      ? { x: ai.y, y: FIELD_WIDTH - ai.x }
+      : { x: ai.x, y: ai.y }
+    this.pushGlow(playerPos.x, playerPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.playerColor, 0.34)
+    this.pushGlow(aiPos.x, aiPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34)
 
-    // Halo de la balle : il prend la couleur de la raquette qui l'a frappée
+    // Halo de la balle
+    const ballPos = this.orientation === 'portrait'
+      ? { x: ball.y, y: FIELD_WIDTH - ball.x }
+      : { x: ball.x, y: ball.y }
     const ballTint = ballColorOf(world)
-    this.pushGlow(ball.x, ball.y, ball.r * 3.4, ball.r * 3.4, ballTint, 0.4)
+    this.pushGlow(ballPos.x, ballPos.y, ball.r * 3.4, ball.r * 3.4, ballTint, 0.4)
 
     // Particules
     const particles = world.particles
@@ -380,10 +402,17 @@ export class Renderer {
       const life = particles.life[i] / Math.max(particles.maxLife[i], 0.0001)
       const kind = particles.kind[i]
       if (kind === 2) continue
+      let px = particles.x[i]
+      let py = particles.y[i]
+      if (this.orientation === 'portrait') {
+        const t = px
+        px = py
+        py = FIELD_WIDTH - t
+      }
       const size = particles.size[i] * (0.35 + life * 0.9)
       this.additive.push(
-        particles.x[i],
-        particles.y[i],
+        px,
+        py,
         size,
         size,
         particles.r[i],
@@ -403,18 +432,21 @@ export class Renderer {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     this.core.begin()
 
-    this.pushPaddle(player, world.playerColor, world.paddleFlashPlayer)
-    this.pushPaddle(ai, world.aiColor, world.paddleFlashAi)
+    this.pushPaddle(player, world.playerColor, world.paddleFlashPlayer, this.orientation)
 
-    // La balle porte la couleur de la raquette qui l'a frappée.
+    this.pushPaddle(ai, world.aiColor, world.paddleFlashAi, this.orientation)
+
     const ballColor = ballColorOf(world)
     const hot: [number, number, number] = [
       lerp(ballColor[0], 1, 0.62),
       lerp(ballColor[1], 1, 0.62),
       lerp(ballColor[2], 1, 0.62),
     ]
+    const ballDraw = this.orientation === 'portrait'
+      ? { x: ball.y, y: FIELD_WIDTH - ball.x }
+      : { x: ball.x, y: ball.y }
     this.core.push(
-      ball.x,
+      ballDraw.x,
       ball.y,
       ball.r,
       ball.r,
@@ -433,9 +465,16 @@ export class Renderer {
       if (particles.kind[i] !== 2) continue
       const life = particles.life[i] / Math.max(particles.maxLife[i], 0.0001)
       const size = particles.size[i]
+      let cx = particles.x[i]
+      let cy = particles.y[i]
+      if (this.orientation === 'portrait') {
+        const t = cx
+        cx = cy
+        cy = FIELD_WIDTH - t
+      }
       this.core.push(
-        particles.x[i],
-        particles.y[i],
+        cx,
+        cy,
         size,
         size * 0.55,
         particles.r[i],
@@ -449,8 +488,26 @@ export class Renderer {
       )
     }
 
-    this.core.flush()
-    gl.disable(gl.BLEND)
+    // Powerups
+    const powerupColors: Record<string, [number, number, number]> = {
+      speed: [1, 0.85, 0.2],
+      slow: [0.3, 0.7, 1],
+      grow: [0.3, 1, 0.5],
+      shrink: [1, 0.35, 0.5],
+    }
+    for (const pu of world.powerups) {
+      if (!pu.alive) continue
+      let px = pu.x
+      let py = pu.y
+      if (this.orientation === 'portrait') {
+        const t = px
+        px = py
+        py = FIELD_WIDTH - t
+      }
+      const col = powerupColors[pu.type] ?? [1, 1, 1]
+      this.pushGlow(px, py, 22, 22, col, 0.5)
+      this.core.push(px, py, 14, 14, col[0], col[1], col[2], 0.9, 1, 14, 0, 1.3)
+    }
   }
 
   private pushGlow(
@@ -481,24 +538,20 @@ export class Renderer {
     paddle: { x: number; y: number; height: number },
     color: readonly [number, number, number],
     flash: number,
+    orientation: 'landscape' | 'portrait' = 'landscape',
   ): void {
-    const halfW = PADDLE_WIDTH / 2
     const halfH = paddle.height / 2
     const boost = 1.7 + flash * 1.6
-    this.core.push(
-      paddle.x,
-      paddle.y,
-      halfW,
-      halfH,
-      color[0],
-      color[1],
-      color[2],
-      1,
-      3,
-      PADDLE_WIDTH / 2,
-      0,
-      boost,
-    )
+    if (orientation === 'portrait') {
+      const cx = paddle.y
+      const cy = FIELD_WIDTH - paddle.x
+      const halfW = halfH
+      const halfH2 = PADDLE_WIDTH / 2
+      this.core.push(cx, cy, halfW, halfH2, color[0], color[1], color[2], 1, 3, PADDLE_WIDTH / 2, 0, boost)
+    } else {
+      const halfW = PADDLE_WIDTH / 2
+      this.core.push(paddle.x, paddle.y, halfW, halfH, color[0], color[1], color[2], 1, 3, PADDLE_WIDTH / 2, 0, boost)
+    }
   }
 
   private runBloom(): void {

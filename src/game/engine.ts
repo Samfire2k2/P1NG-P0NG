@@ -1,14 +1,14 @@
 import { audio } from './audio'
 import type { Hsv } from './colors'
 import { aiHsvFrom, hsvToRgb } from './colors'
-import { FIXED_DT, MAX_STEPS_PER_FRAME, ROUND_DURATION, type Difficulty, type MatchFormat } from './constants'
+import { FIXED_DT, MAX_STEPS_PER_FRAME, type Difficulty, type MatchFormat } from './constants'
 import { clamp, lerp } from './math'
 import { music } from './music'
 import { World, type GameEvent, type Side } from './world'
 import { SnapshotInterpolator } from '../net/interpolator'
 import { CTRL, NET_EVENT, NetSession, type NetMeta, type NetSnapshot, type NetStatus } from '../net/session'
 import { DEFAULT_RENDER_SETTINGS, Renderer, type RenderSettings } from '../render/renderer'
-import { computeView, screenToWorldY } from '../render/view'
+import { computeView } from '../render/view'
 
 export type EnginePhase = 'menu' | 'playing' | 'paused' | 'gameover'
 export type GameMode = 'ai' | 'online'
@@ -46,6 +46,12 @@ export interface EngineState {
   latency: number
   peerConnected: boolean
   netMessage: string
+  /** Mode powerups actif. */
+  powerups: boolean
+  /** Orientation du terrain. */
+  orientation: 'landscape' | 'portrait'
+  /** Durée d'une manche chronométrée (secondes). */
+  duration: number
 }
 
 export interface EngineOptions {
@@ -54,6 +60,9 @@ export interface EngineOptions {
   target: number
   format: MatchFormat
   muted: boolean
+  powerups?: boolean
+  orientation?: 'landscape' | 'portrait'
+  duration?: number
 }
 
 const KEYBOARD_SPEED = 1500
@@ -69,6 +78,8 @@ function netEventType(type: GameEvent['type']): number {
       return NET_EVENT.SCORE
     case 'serve':
       return NET_EVENT.SERVE
+    case 'powerup':
+      return NET_EVENT.POWERUP
     case 'countdown':
       return NET_EVENT.COUNTDOWN
     case 'win':
@@ -102,6 +113,9 @@ export class GameEngine {
   private difficulty: Difficulty
   private target: number
   private format: MatchFormat = 'points'
+  private powerups = false
+  private orientation: 'landscape' | 'portrait' = 'landscape'
+  private duration = 180
   private muted: boolean
   private fps = 60
   private frameEma = 16.7
@@ -113,8 +127,8 @@ export class GameEngine {
   private keyUp = false
   private keyDown = false
   private pointerActive = false
+  private pointerClientX = 0
   private pointerClientY = 0
-  private pointerWorldY = 450
 
   private session: NetSession | null = null
   private interpolator = new SnapshotInterpolator()
@@ -143,12 +157,17 @@ export class GameEngine {
     this.difficulty = options.difficulty
     this.target = options.target
     this.format = options.format
+    this.powerups = options.powerups ?? false
+    this.orientation = options.orientation ?? 'landscape'
+    this.duration = options.duration ?? 180
     this.muted = options.muted
 
     this.renderer = new Renderer(canvas)
     this.world.setPlayerColor(this.color)
     this.world.difficulty = this.difficulty
     this.world.format = this.format
+    this.world.powerupsEnabled = this.powerups
+    this.world.roundDuration = this.duration
     this.world.target = this.target
     this.world.reset(this.target)
     this.world.frozen = true
@@ -195,6 +214,9 @@ export class GameEngine {
       latency: this.latency,
       peerConnected: this.peerConnected,
       netMessage: this.netMessage,
+      powerups: this.powerups,
+      orientation: this.orientation,
+      duration: this.duration,
     }
   }
 
@@ -320,16 +342,37 @@ export class GameEngine {
     this.emit(true)
   }
 
-  /**
-   * Change le format de la manche : au nombre de points (5, 7, 11) ou
-   * chronométré (3 minutes, le meilleur score l'emporte).
-   */
-  setFormat(format: MatchFormat, target: number): void {
+  setFormat(format: MatchFormat, target: number, duration?: number): void {
     this.format = format
     this.target = target
     this.world.format = format
     this.world.target = target
-    this.world.timeLeft = format === 'time' ? ROUND_DURATION : -1
+    if (duration !== undefined) this.duration = duration
+    if (format === 'time') {
+      this.world.roundDuration = this.duration
+      this.world.timeLeft = this.duration
+    } else {
+      this.world.timeLeft = -1
+    }
+    this.emit(true)
+  }
+
+  setPowerups(enabled: boolean): void {
+    this.powerups = enabled
+    this.world.powerupsEnabled = enabled
+    if (!enabled) this.world.powerups = []
+    this.emit(true)
+  }
+
+  setOrientation(orientation: 'landscape' | 'portrait'): void {
+    this.orientation = orientation
+    this.emit(true)
+  }
+
+  setDuration(seconds: number): void {
+    this.duration = Math.max(30, Math.min(3600, Math.round(seconds)))
+    this.world.roundDuration = this.duration
+    if (this.format === 'time') this.world.timeLeft = this.duration
     this.emit(true)
   }
 
@@ -552,6 +595,9 @@ export class GameEngine {
       case NET_EVENT.DRAW:
         audio.draw()
         break
+      case NET_EVENT.POWERUP:
+        audio.powerup(snap.eventOffset, snap.eventSide === 0)
+        break
       default:
         break
     }
@@ -642,6 +688,7 @@ export class GameEngine {
   }
 
   private onPointerMove = (event: PointerEvent): void => {
+    this.pointerClientX = event.clientX
     this.pointerClientY = event.clientY
     this.pointerActive = true
   }
@@ -653,15 +700,21 @@ export class GameEngine {
    */
   private updatePointerTarget(): void {
     const rect = this.canvas.getBoundingClientRect()
-    const view = computeView(this.renderer.pixelWidth, this.renderer.pixelHeight)
-    const canvasY =
-      (this.pointerClientY - rect.top) * (this.renderer.pixelHeight / Math.max(rect.height, 1))
-    this.pointerWorldY = screenToWorldY(view, canvasY)
-    this.localPaddleTarget = this.pointerWorldY
+    const view = computeView(this.renderer.pixelWidth, this.renderer.pixelHeight, this.orientation)
+    const cx = (this.pointerClientX - rect.left) * (this.renderer.pixelWidth / Math.max(rect.width, 1))
+    const cy = (this.pointerClientY - rect.top) * (this.renderer.pixelHeight / Math.max(rect.height, 1))
+    let worldY: number
+    if (this.orientation === 'portrait') {
+      worldY = (cx - view.originX) / view.scale
+    } else {
+      worldY = (cy - view.originY) / view.scale
+    }
+    this.localPaddleTarget = worldY
   }
 
   private onPointerDown = (event: PointerEvent): void => {
     audio.init()
+    this.pointerClientX = event.clientX
     this.pointerClientY = event.clientY
     this.pointerActive = true
     if (this.phase === 'paused') this.resume()
@@ -790,7 +843,7 @@ export class GameEngine {
 
     this.handleEvents()
     this.syncPhase()
-    this.renderer.render(this.world, this.settings)
+    this.renderer.render(this.world, this.settings, this.orientation)
     this.emit()
   }
 
@@ -833,6 +886,9 @@ export class GameEngine {
         break
       case 'serve':
         audio.serve()
+        break
+      case 'powerup':
+        audio.powerup(ev.value ?? 0, ev.side === 'player')
         break
       case 'win':
         audio.win()

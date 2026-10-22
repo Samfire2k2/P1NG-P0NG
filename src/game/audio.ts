@@ -292,7 +292,16 @@ export class AudioEngine {
     this.tone(1520, 0.05, { type: 'sine', gain: 0.035, delay: 0.01 })
   }
 
-  /** Bip dont la hauteur suit la teinte choisie : l'arc-en-ciel devient une gamme. */
+  /** Powerup ramassé : arpège brillant dont la hauteur dépend du type. */
+  powerup(type: number, isPlayer: boolean): void {
+    if (!this.ctx || this.muted) return
+    const roots = [659.25, 523.25, 783.99, 392]
+    const root = roots[type % roots.length] ?? 523.25
+    const gain = isPlayer ? 0.14 : 0.11
+    this.tone(root, 0.18, { type: 'triangle', gain, attack: 0.004 })
+    this.tone(root * 1.5, 0.14, { type: 'sine', gain: gain * 0.5, delay: 0.04 })
+    this.tone(root * 2, 0.12, { type: 'square', gain: gain * 0.35, delay: 0.08, sweepTo: root * 2.4 })
+  }
   hue(hue: number): void {
     if (!this.ctx || this.muted) return
     const semis = (hue / 360) * 24

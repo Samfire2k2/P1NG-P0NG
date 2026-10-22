@@ -15,7 +15,6 @@ import {
   PLAYER_MAX_SPEED,
   AI_MARGIN,
   POINT_PAUSE,
-  ROUND_DURATION,
   SPIN_TRANSFER,
   type Difficulty,
   type MatchFormat,
@@ -27,6 +26,16 @@ import { aiColorFrom, hsvToRgb, type Hsv, type Rgb } from './colors'
 export type Side = 'player' | 'ai'
 export type Phase = 'serve' | 'play' | 'point' | 'over'
 
+export type PowerupType = 'speed' | 'slow' | 'grow' | 'shrink'
+
+export interface Powerup {
+  x: number
+  y: number
+  type: PowerupType
+  ttl: number
+  alive: boolean
+}
+
 export type GameEventType =
   | 'paddleHit'
   | 'wallHit'
@@ -37,6 +46,7 @@ export type GameEventType =
   | 'lose'
   | 'draw'
   | 'pointEnd'
+  | 'powerup'
 
 export interface GameEvent {
   type: GameEventType
@@ -101,10 +111,21 @@ export class World {
   target = 11
   /** Format de la manche en cours. */
   format: MatchFormat = 'points'
+  /** Durée d'une manche chronométrée (secondes). */
+  roundDuration = 180
   /** Temps restant en mode « temps » ; -1 quand la manche n'est pas chronométrée. */
   timeLeft = -1
   /** La manche s'est terminée sur une égalité. */
   draw = false
+
+  /** Mode powerups : des bonus apparaissent sur le terrain. */
+  powerupsEnabled = false
+  powerups: Powerup[] = []
+  private spawnTimer = 0
+  /** Multiplicateurs actifs jusqu'au prochain point. */
+  playerHeightMul = 1
+  aiHeightMul = 1
+  ballSpeedMul = 1
 
   serveTimer = 0
   serveTo: Side = 'player'
@@ -174,14 +195,21 @@ export class World {
     this.scorePlayer = 0
     this.scoreAi = 0
     this.target = target
-    this.timeLeft = this.format === 'time' ? ROUND_DURATION : -1
+    this.timeLeft = this.format === 'time' ? this.roundDuration : -1
     this.draw = false
     this.winner = null
     this.lastScorer = null
+    this.powerups = []
+    this.spawnTimer = 5
+    this.playerHeightMul = 1
+    this.aiHeightMul = 1
+    this.ballSpeedMul = 1
     this.player.y = FIELD_HEIGHT / 2
     this.player.vy = 0
     this.ai.y = FIELD_HEIGHT / 2
     this.ai.vy = 0
+    this.player.height = PADDLE_HEIGHT * this.playerHeightMul
+    this.ai.height = PADDLE_HEIGHT * this.aiHeightMul
     this.playerTargetY = FIELD_HEIGHT / 2
     this.aiState.targetY = FIELD_HEIGHT / 2
     this.aiState.reactionTimer = 0
@@ -253,6 +281,7 @@ export class World {
       }
     }
 
+    this.updatePowerups(dt)
     this.particles.update(dt)
     this.updateClock(dt)
   }
@@ -382,7 +411,7 @@ export class World {
     b.x = p.x + dir * (PADDLE_WIDTH / 2 + b.r)
 
     const angle = offset * MAX_BOUNCE_ANGLE
-    const speed = Math.min(b.speed * BALL_SPEED_GAIN, BALL_MAX_SPEED)
+    const speed = Math.min(b.speed * BALL_SPEED_GAIN * this.ballSpeedMul, BALL_MAX_SPEED)
     b.speed = speed
     let vx = Math.cos(angle) * speed * dir
     let vy = Math.sin(angle) * speed
@@ -428,6 +457,72 @@ export class World {
     this.push({ type: 'wallHit', x, y, power })
   }
 
+  private updatePowerups(dt: number): void {
+    if (!this.powerupsEnabled) {
+      this.powerups = []
+      return
+    }
+    // Spawn
+    if (this.phase === 'play') {
+      this.spawnTimer -= dt
+      if (this.spawnTimer <= 0) {
+        this.spawnTimer = 6 + Math.random() * 4
+        const alive = this.powerups.filter((p) => p.alive)
+        if (alive.length < 3) {
+          const types: PowerupType[] = ['speed', 'slow', 'grow', 'shrink']
+          this.powerups.push({
+            x: 260 + Math.random() * (FIELD_WIDTH - 520),
+            y: 140 + Math.random() * (FIELD_HEIGHT - 280),
+            type: types[Math.floor(Math.random() * types.length)],
+            ttl: 9,
+            alive: true,
+          })
+        }
+      }
+    }
+    // Decay
+    for (const p of this.powerups) {
+      if (p.alive) {
+        p.ttl -= dt
+        if (p.ttl <= 0) p.alive = false
+      }
+    }
+    // Collection
+    const b = this.ball
+    for (const p of this.powerups) {
+      if (!p.alive) continue
+      if (Math.hypot(b.x - p.x, b.y - p.y) <= b.r + 16) {
+        p.alive = false
+        this.collectPowerup(p, b.owner)
+      }
+    }
+    // Purge
+    this.powerups = this.powerups.filter((p) => p.alive)
+  }
+
+  private collectPowerup(p: Powerup, owner: number): void {
+    const side: Side = owner === 0 ? 'player' : 'ai'
+    switch (p.type) {
+      case 'speed':
+        this.ballSpeedMul = Math.min(1.6, this.ballSpeedMul * 1.35)
+        break
+      case 'slow':
+        this.ballSpeedMul = Math.max(0.55, this.ballSpeedMul * 0.72)
+        break
+      case 'grow':
+        if (owner === 0) this.playerHeightMul = Math.min(1.6, this.playerHeightMul * 1.4)
+        else this.aiHeightMul = Math.min(1.6, this.aiHeightMul * 1.4)
+        break
+      case 'shrink':
+        if (owner === 0) this.aiHeightMul = Math.max(0.6, this.aiHeightMul * 0.7)
+        else this.playerHeightMul = Math.max(0.6, this.playerHeightMul * 0.7)
+        break
+    }
+    this.player.height = PADDLE_HEIGHT * this.playerHeightMul
+    this.ai.height = PADDLE_HEIGHT * this.aiHeightMul
+    this.push({ type: 'powerup', side, x: p.x, y: p.y, value: ['speed','slow','grow','shrink'].indexOf(p.type) })
+  }
+
   private onGoal(scorer: Side): void {
     if (scorer === 'player') this.scorePlayer++
     else this.scoreAi++
@@ -437,6 +532,13 @@ export class World {
     this.shake = 1
     this.flash = 1
     this.gridPulse = 1
+
+    // Les effets des powerups s'arrêtent au point marqué.
+    this.playerHeightMul = 1
+    this.aiHeightMul = 1
+    this.ballSpeedMul = 1
+    this.player.height = PADDLE_HEIGHT
+    this.ai.height = PADDLE_HEIGHT
 
     const color = scorer === 'player' ? this.playerColor : this.aiColor
     const x = scorer === 'player' ? FIELD_WIDTH + 20 : -20
