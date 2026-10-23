@@ -2,7 +2,7 @@ import { DIFFICULTY_PROFILES, DIFFICULTIES, type Difficulty, type MatchFormat } 
 import type { EngineState } from '../game/engine'
 import type { NetStatus } from '../net/session'
 import ColorPicker from './ColorPicker'
-import { IconPalette, IconPlay } from './icons'
+import { IconPalette } from './icons'
 import OnlineLobby from './OnlineLobby'
 
 export type GameModeTab = 'ai' | 'online' | 'brick'
