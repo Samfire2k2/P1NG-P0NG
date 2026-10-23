@@ -385,14 +385,14 @@ export default function StartOverlay({
                   />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={onStart}
-                  className="primary-button mt-6 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-[0.2em] uppercase"
-                >
-                  <IconPlay className="h-4 w-4" />
-                  Jouer
-                </button>
+<div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center">
+                  <span
+                    onClick={onStart}
+                    className="font-orbitron text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-[var(--accent)] to-transparent shadow-glow"
+                  >
+                    P1NG-P0NG
+                  </span>
+                </div>
               {history.length > 0 && (
                 <div className="mt-6 border-t border-white/5 pt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
