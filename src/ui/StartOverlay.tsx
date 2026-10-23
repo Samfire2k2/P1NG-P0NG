@@ -125,9 +125,16 @@ export default function StartOverlay({
               </button>
             )
           })}
+        
+{/* Bouton Jouer centré en bas de la barre de sélection */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-full max-w-md text-center">
+          <button
+            onClick={onStart}
+            className="rounded-lg px-8 py-3 text-xl font-bold text-white bg-gradient-to-r from-[var(--accent)] to-transparent shadow-glow hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-available"
+          >
+            Jouer
+          </button>
         </div>
-
-        <div className="grid gap-7 md:grid-cols-[1.05fr_1fr]">
           {/* Colonne gauche */}
           <div className="flex flex-col">
             {tab === 'ai' ? (
@@ -386,15 +393,7 @@ export default function StartOverlay({
                   />
                 </div>
 
-<div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center">
-                  <button
-                    onClick={onStart}
-                    className="rounded-lg px-8 py-3 text-xl font-bold text-white bg-gradient-to-r from-[var(--accent)] to-transparent shadow-glow hover:opacity-90 transition-opacity"
-                    style={{ cursor: canStart ? 'pointer' : 'not-available' }}
-                  >
-                    Jouer
-                  </button>
-                </div>
+
               {history.length > 0 && (
                 <div className="mt-6 border-t border-white/5 pt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
