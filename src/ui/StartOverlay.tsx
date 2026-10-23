@@ -93,6 +93,7 @@ export default function StartOverlay({
             [
               { id: 'ai' as const, label: 'Contre l’IA', hint: '4 niveaux' },
               { id: 'online' as const, label: 'En ligne', hint: 'Duel à deux' },
+              { id: 'brick' as const, label: 'Casse-brique', hint: '1 joueur vs briques' },
             ]
           ).map((item) => {
             const active = tab === item.id
@@ -386,12 +387,13 @@ export default function StartOverlay({
                 </div>
 
 <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center">
-                  <span
+                  <button
                     onClick={onStart}
-                    className="font-orbitron text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-[var(--accent)] to-transparent shadow-glow"
+                    className="rounded-lg px-8 py-3 text-xl font-bold text-white bg-gradient-to-r from-[var(--accent)] to-transparent shadow-glow hover:opacity-90 transition-opacity"
+                    style={{ cursor: canStart ? 'pointer' : 'not-available' }}
                   >
-                    P1NG-P0NG
-                  </span>
+                    Jouer
+                  </button>
                 </div>
               {history.length > 0 && (
                 <div className="mt-6 border-t border-white/5 pt-4">
