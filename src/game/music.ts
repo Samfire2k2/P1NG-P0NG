@@ -12,7 +12,14 @@
 import { audio } from './audio'
 import { clamp } from './math'
 
-export type MusicTrack = 'menu' | 'game'
+export type MusicTrack =
+  | 'menu'
+  | 'game'
+  | 'ai_brick'     // Mode briques IA (80 bricks, adversaire IA)
+  | 'online'       // Mode duel en ligne 2 joueurs
+  | 'portrait'     // Mode portrait (paddle rotated 90°)
+  | 'classic'      // Mode classique Pong
+  | 'start'        // Écran de démarrage
 
 interface MusicNote {
   /** Fréquence en Hz. */

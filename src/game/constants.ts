@@ -48,6 +48,7 @@ export const BRICK_LIVES = 3
 
 export const DIFFICULTIES = ['facile', 'moyen', 'difficile', 'expert'] as const
 export type Difficulty = (typeof DIFFICULTIES)[number]
+export type GameMode = 'ai' | 'online'
 
 export interface DifficultyProfile {
   label: string

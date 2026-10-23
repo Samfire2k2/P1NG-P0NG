@@ -997,7 +997,17 @@ export class GameEngine {
 
   private syncPhase(): void {
     // Musique : piste de jeu pendant la partie, piste du menu sinon.
-    music.setTrack(this.phase === 'playing' ? 'game' : 'menu')
+    music.setTrack(
+    this.phase === 'playing'
+      ? this.world.brickMode
+        ? 'ai_brick'
+        : this.world.mode === 'online'
+        ? 'online'
+        : this.world.orientation === 'portrait'
+        ? 'portrait'
+        : 'classic'
+      : 'menu'
+  )
     music.setTension(this.musicTension())
     const lead =
       this.world.scorePlayer > this.world.scoreAi ? 'player' : this.world.scorePlayer < this.world.scoreAi ? 'ai' : 'none'

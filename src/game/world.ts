@@ -18,6 +18,7 @@
   POINT_PAUSE,
   SPIN_TRANSFER,
   type Difficulty,
+  type GameMode,
   type MatchFormat,
 } from './constants'
 import { clamp, createRng, randRange, TAU } from './math'
@@ -160,6 +161,8 @@ export class World {
    * pour casser toutes les briques ; il perd une vie si la balle passe.
    */
   brickMode = false
+  mode: GameMode = 'ai'
+  orientation: 'landscape' | 'portrait' = 'landscape'
   /** Mode casse-brique IA : l'ordinateur a ses propres briques. */
   aiBrickMode = false
   aiBricks: Brick[] = []
