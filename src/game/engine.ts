@@ -776,13 +776,35 @@ export class GameEngine {
     switch (event.code) {
       case 'ArrowUp':
       case 'KeyW':
+        // En mode portrait, ArrowUp ne fait rien (on utilise les flèches gauche/droite)
+        if (this.orientation === 'portrait') break
         this.keyUp = true
         this.pointerActive = false
         break
       case 'ArrowDown':
       case 'KeyS':
+        // En mode portrait, ArrowDown ne fait rien (on utilise les flèches gauche/droite)
+        if (this.orientation === 'portrait') break
         this.keyDown = true
         this.pointerActive = false
+        break
+      case 'ArrowLeft':
+        // En mode portrait, flèche gauche = monter
+        if (this.orientation === 'portrait') {
+          this.keyUp = true
+          this.pointerActive = false
+          break
+        }
+        // En mode paysage, flèche gauche n'est pas utilisée par défaut
+        break
+      case 'ArrowRight':
+        // En mode portrait, flèche droite = descendre
+        if (this.orientation === 'portrait') {
+          this.keyDown = true
+          this.pointerActive = false
+          break
+        }
+        // En mode paysage, flèche droite n'est pas utilisée par défaut
         break
       case 'Space':
         event.preventDefault()
@@ -799,8 +821,14 @@ export class GameEngine {
   }
 
   private onKeyUp = (event: KeyboardEvent): void => {
-    if (event.code === 'ArrowUp' || event.code === 'KeyW') this.keyUp = false
-    if (event.code === 'ArrowDown' || event.code === 'KeyS') this.keyDown = false
+    // En mode portrait, utiliser les flèches gauche/droite
+    if (this.orientation === 'portrait') {
+      if (event.code === 'ArrowLeft' || event.code === 'KeyA') this.keyUp = false
+      if (event.code === 'ArrowRight' || event.code === 'KeyD') this.keyDown = false
+    } else {
+      if (event.code === 'ArrowUp' || event.code === 'KeyW') this.keyUp = false
+      if (event.code === 'ArrowDown' || event.code === 'KeyS') this.keyDown = false
+    }
   }
 
   private onWindowBlur = (): void => {

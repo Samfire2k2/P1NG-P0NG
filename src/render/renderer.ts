@@ -399,8 +399,8 @@ export class Renderer {
     const aiPos = this.orientation === 'portrait'
       ? { x: ai.y, y: FIELD_WIDTH - ai.x }
       : { x: ai.x, y: ai.y }
-    this.pushGlow(playerPos.x, playerPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.playerColor, 0.34)
-    this.pushGlow(aiPos.x, aiPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34)
+    this.pushGlow(playerPos.x, playerPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.playerColor, 0.34, this.orientation)
+    this.pushGlow(aiPos.x, aiPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34, this.orientation)
 
     // Halo de la balle
     const ballPos = this.orientation === 'portrait'
@@ -565,12 +565,16 @@ export class Renderer {
     halfH: number,
     color: readonly [number, number, number],
     alpha: number,
+    orientation: 'landscape' | 'portrait' = 'landscape',
   ): void {
+    // En mode portrait, inverter les dimensions pour rotation 90°
+    const glowHalfW = orientation === 'portrait' ? halfH : halfW
+    const glowHalfH = orientation === 'portrait' ? halfW : halfH
     this.additive.push(
       x,
       y,
-      halfW,
-      halfH,
+      glowHalfW,
+      glowHalfH,
       color[0],
       color[1],
       color[2],
