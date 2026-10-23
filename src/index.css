@@ -126,14 +126,19 @@ canvas {
   transform: translateY(1px);
 }
 
-.primary-button:active {
-  transform: translateY(1px);
-}
-
 .hue-thumb {
   box-shadow:
     0 0 0 2px rgba(255, 255, 255, 0.9),
     0 0 16px 2px rgba(255, 255, 255, 0.55);
+}
+
+/* Ombre néon pour le bouton Jouer ----------------------------------- */
+
+.shadow-glow-accent {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 22px -6px var(--accent),
+    0 0 45px -12px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 /* Curseur de teinte ------------------------------------------------ */

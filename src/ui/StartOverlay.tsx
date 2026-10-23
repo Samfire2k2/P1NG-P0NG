@@ -88,7 +88,7 @@ export default function StartOverlay({
     <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-[#05060a]/55 p-4 pt-8 backdrop-blur-md">
       <div className="glass-panel animate-rise my-6 w-full max-w-3xl rounded-3xl p-6 sm:p-8">
         {/* Onglets de mode */}
-        <div className="mb-7 grid grid-cols-2 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
+        <div className="mb-7 grid grid-cols-3 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
           {(
             [
               { id: 'ai' as const, label: 'Contre l’IA', hint: '4 niveaux' },
@@ -130,7 +130,7 @@ export default function StartOverlay({
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-full max-w-md text-center">
           <button
             onClick={onStart}
-            className="rounded-lg px-8 py-3 text-xl font-bold text-white bg-gradient-to-r from-[var(--accent)] to-transparent shadow-glow hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-available"
+            className="rounded-lg px-8 py-3 text-xl font-bold text-white bg-gradient-to-r from-[var(--accent)] to-transparent shadow-glow-accent hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-available"
           >
             Jouer
           </button>
