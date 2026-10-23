@@ -1,4 +1,4 @@
-import { DIFFICULTY_PROFILES, DIFFICULTIES, type Difficulty, type MatchFormat } from '../game/constants'
+﻿import { DIFFICULTY_PROFILES, DIFFICULTIES, type Difficulty, type MatchFormat } from '../game/constants'
 import type { EngineState } from '../game/engine'
 import type { NetStatus } from '../net/session'
 import ColorPicker from './ColorPicker'
@@ -91,8 +91,8 @@ export default function StartOverlay({
         <div className="mb-7 grid grid-cols-3 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
           {(
             [
-              { id: 'ai' as const, label: 'Contre l’IA', hint: '4 niveaux' },
-              { id: 'online' as const, label: 'En ligne', hint: 'Duel à deux' },
+              { id: 'ai' as const, label: 'Contre lâ€™IA', hint: '4 niveaux' },
+              { id: 'online' as const, label: 'En ligne', hint: 'Duel Ã  deux' },
               { id: 'brick' as const, label: 'Casse-brique', hint: '1 joueur vs briques' },
             ]
           ).map((item) => {
@@ -126,7 +126,7 @@ export default function StartOverlay({
             )
           })}
         
-{/* Bouton Jouer centré en bas de la barre de sélection */}
+{/* Bouton Jouer centrÃ© en bas de la barre de sÃ©lection */}
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-full max-w-md text-center">
           <button
             onClick={onStart}
@@ -147,22 +147,37 @@ export default function StartOverlay({
                   P1NG-P0NG
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Le Pong de base, en néon. 4 niveaux de difficulté, une balle qui accélère à
-                  chaque rebond et la couleur de ta raquette à choisir. Prêt?
+                  Le Pong de base, en nÃ©on. 4 niveaux de difficultÃ©, une balle qui accÃ©lÃ¨re Ã 
+                  chaque rebond et la couleur de ta raquette Ã  choisir. PrÃªt?
+                </p>
+              </>
+            ) : tab === 'brick' ? (
+              <>
+                <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.4em] text-zinc-500 uppercase">
+                  <IconPalette className="h-3.5 w-3.5" />
+                  P1NG-P0NG Â· casse-brique
+                </div>
+                <h1 className="ping-title mt-3 text-4xl leading-[0.95] font-extrabold tracking-tight sm:text-5xl">
+                  CASSE-BRIQUE
+                  <span className="block text-2xl sm:text-3xl">DÃ©truis toutes les briques</span>
+                </h1>
+                <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
+                  Casse toutes les briques avec la balle. Chaque brique dÃ©truite rapporte un
+                  point. Si la balle passe ta raquette, tu perds une vie. 3 vies en tout.
                 </p>
               </>
             ) : (
               <>
                 <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.4em] text-zinc-500 uppercase">
                   <IconPalette className="h-3.5 w-3.5" />
-                  P1NG-P0NG · en ligne
+                  P1NG-P0NG Â· en ligne
                 </div>
                 <h1 className="ping-title mt-3 text-4xl leading-[0.95] font-extrabold tracking-tight sm:text-5xl">
                   DUEL
                   <span className="block text-2xl sm:text-3xl">1 contre 1</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Crée un salon, envoie le lien. Ton adversaire clique, la partie démarre. La
+                  CrÃ©e un salon, envoie le lien. Ton adversaire clique, la partie dÃ©marre. La
                   connexion passe en direct entre les deux navigateurs, sans serveur de jeu.
                 </p>
               </>
@@ -190,12 +205,12 @@ export default function StartOverlay({
                   onQuit={onQuitRoom}
                 />
               </div>
-            ) : (
+            ) : tab === 'brick' ? (
               <>
-                {/* Difficulté */}
+                {/* DifficultÃ© */}
                 <div className="mt-6">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Niveau de l’IA
+                    Niveau de lâ€™IA
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
                     {DIFFICULTIES.map((difficulty) => {
@@ -217,32 +232,38 @@ export default function StartOverlay({
                   </div>
                 </div>
 
-                {/* Points */}
-                <div className="mt-4">
-                  <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Points
-                  </div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[5, 7, 11, 15].map((target) => {
-                      const active = state.format === 'points' && state.target === target
-                      return (
-                        <button
-                          key={target}
-                          type="button"
-                          onClick={() => onFormat('points', target, duration)}
-                          className={`glass-button rounded-lg px-2 py-2 text-[11px] font-semibold ${
-                            active ? 'text-white' : 'text-zinc-400'
-                          }`}
-                          style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
-                        >
-                          {target}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
+                {tab !== 'brick' && (
+                  <>
+                    {/* Points */}
+                    <div className="mt-4">
+                      <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+                        Points
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[5, 7, 11, 15].map((target) => {
+                          const active = state.format === 'points' && state.target === target
+                          return (
+                            <button
+                              key={target}
+                              type="button"
+                              onClick={() => onFormat('points', target, duration)}
+                              className={`glass-button rounded-lg px-2 py-2 text-[11px] font-semibold ${
+                                active ? 'text-white' : 'text-zinc-400'
+                              }`}
+                              style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+                            >
+                              {target}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
 
-                {/* Temps */}
+                {tab !== 'brick' && (
+                  <>
+                    {/* Temps */}
                 <div className="mt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
                     Temps
@@ -271,10 +292,12 @@ export default function StartOverlay({
                   </div>
                   {state.format === 'time' && (
                     <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
-                      {Math.round(duration / 60)} min. Le meilleur score l’emporte.
+                      {Math.round(duration / 60)} min. Le meilleur score lâ€™emporte.
                     </p>
                   )}
                 </div>
+                  </>
+                )}
 
                 {/* Powerups */}
                 <div className="mt-4 flex items-center justify-between">
@@ -289,13 +312,13 @@ export default function StartOverlay({
                     }`}
                     style={powerups ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
                   >
-                    {powerups ? 'Activés' : 'Désactivés'}
+                    {powerups ? 'ActivÃ©s' : 'DÃ©sactivÃ©s'}
                   </button>
                 </div>
                 {powerups && (
                   <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
                     Des bonus apparaissent sur le terrain. La balle qui les traverse active
-                    l’effet : accélération, ralentissement, agrandissement ou rétrécissement de
+                    lâ€™effet : accÃ©lÃ©ration, ralentissement, agrandissement ou rÃ©trÃ©cissement de
                     raquette.
                   </p>
                 )}
@@ -313,17 +336,17 @@ export default function StartOverlay({
                     }`}
                     style={brickMode ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
                   >
-                    {brickMode ? 'Activé' : 'Désactivé'}
+                    {brickMode ? 'ActivÃ©' : 'DÃ©sactivÃ©'}
                   </button>
                  </div>
 
-                {/* Thème */}
+                {/* ThÃ¨me */}
                 <div className="mt-4">
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Thème
+                    ThÃ¨me
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
-                    {['Néon', 'Synthwave', 'Rétro', 'Minimal'].map((label, i) => {
+                    {['NÃ©on', 'Synthwave', 'RÃ©tro', 'Minimal'].map((label, i) => {
                       const active = theme === i
                       return (
                         <button
@@ -367,7 +390,7 @@ export default function StartOverlay({
                   </div>
                 </div>
 
-                {/* Intensité du glow */}
+                {/* IntensitÃ© du glow */}
                 <div className="mt-4">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
@@ -403,7 +426,7 @@ export default function StartOverlay({
                     {history.slice(0, 5).map((h, i) => (
                       <div key={i} className="flex items-center justify-between">
                         <span>
-                          {h.mode === 'online' ? 'En ligne' : 'Solo'} · {h.difficulty} ·{' '}
+                          {h.mode === 'online' ? 'En ligne' : 'Solo'} Â· {h.difficulty} Â·{' '}
                           {h.format === 'time' ? 'temps' : `${h.target} pts`}
                         </span>
                         <span className="font-mono-game">
@@ -415,9 +438,9 @@ export default function StartOverlay({
                 </div>
               )}
 
-              {/* Astuce de contrôle */}
+              {/* Astuce de contrÃ´le */}
               <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
-                Souris ou flèches · <span className="text-zinc-500">Espace</span> = pause
+                Souris ou flÃ¨ches Â· <span className="text-zinc-500">Espace</span> = pause
               </p>
               </>
             )}
@@ -430,7 +453,7 @@ export default function StartOverlay({
                 Ta couleur
               </div>
               <div className="font-mono-game text-[10px] text-zinc-600">
-                H {Math.round(state.color.h)}° · S {Math.round(state.color.s * 100)}% · V{' '}
+                H {Math.round(state.color.h)}Â° Â· S {Math.round(state.color.s * 100)}% Â· V{' '}
                 {Math.round(state.color.v * 100)}%
               </div>
             </div>
@@ -448,8 +471,8 @@ export default function StartOverlay({
                 }}
               />
               <div className="text-[11px] leading-snug text-zinc-500">
-                Elle colore ta raquette, ta traînée et la lueur du terrain. En solo, l’IA prend la
-                couleur complémentaire. En duel, chacun garde la sienne.
+                Elle colore ta raquette, ta traÃ®nÃ©e et la lueur du terrain. En solo, lâ€™IA prend la
+                couleur complÃ©mentaire. En duel, chacun garde la sienne.
               </div>
             </div>
           </div>
@@ -458,3 +481,4 @@ export default function StartOverlay({
     </div>
   )
 }
+
