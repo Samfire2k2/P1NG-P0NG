@@ -130,7 +130,7 @@ export default function StartOverlay({
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-full max-w-md text-center">
           <button
             onClick={onStart}
-            className="rounded-lg px-8 py-3 text-xl font-bold text-white bg-gradient-to-r from-[var(--accent)] to-transparent shadow-glow-accent hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-available"
+            className="rounded-lg px-8 py-3 text-xl font-bold text-white bg-gradient-to-r from-[var(--accent)] to-transparent shadow-glow-accent hover:opacity-90 transition-opacity"
           >
             Jouer
           </button>
@@ -255,7 +255,7 @@ export default function StartOverlay({
                       step={1}
                       value={Math.round(duration / 60)}
                       onChange={(e) => onFormat('time', state.target, Math.max(60, Number(e.target.value) * 60))}
-                      className="glass-button w-20 rounded-lg px-3 py-2 text-sm text-zinc-200"
+                      className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-center text-sm text-zinc-200"
                     />
                     <span className="text-[11px] text-zinc-500">minutes</span>
                     <button

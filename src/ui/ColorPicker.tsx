@@ -38,7 +38,7 @@ export default function ColorPicker({ color, onChange, onCommit }: ColorPickerPr
       }
     }
     ctx.putImageData(image, 0, 0)
-  }, [color.h])
+  }, [color.h, color.s, color.v])
 
   const applyFromPointer = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -125,11 +125,14 @@ export default function ColorPicker({ color, onChange, onCommit }: ColorPickerPr
               aria-label={preset.name}
               onClick={() => {
                 if (isRainbow) {
-                  onChange({ h: Math.random() * 360, s: 0.95, v: 1 })
-                } else {
-                  onChange({ h: preset.h, s: 0.92, v: 1 })
-                }
-                onCommit?.(isRainbow ? { h: 0, s: 1, v: 1 } : { h: preset.h, s: 0.92, v: 1 })
+                const rainbow = { h: Math.random() * 360, s: 0.95, v: 1 }
+                onChange(rainbow)
+                onCommit?.(rainbow)
+              } else {
+                const presetValue = { h: preset.h, s: 0.92, v: 1 }
+                onChange(presetValue)
+                onCommit?.(presetValue)
+              }
               }}
               className={`group relative aspect-square rounded-md border transition-all duration-150 hover:scale-110 ${
                 active ? 'border-white shadow-[0_0_12px_rgba(255,255,255,0.6)]' : 'border-white/15'

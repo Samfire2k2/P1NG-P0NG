@@ -41,7 +41,7 @@ export const POINT_PAUSE = 0.9
 export type MatchFormat = 'points' | 'time'
 
 /** Durée d'une manche en mode « temps » (3 minutes). */
-export const ROUND_DURATION = 0
+export const ROUND_DURATION = 180
 
 /** Vies du joueur en mode casse-brique. */
 export const BRICK_LIVES = 3
