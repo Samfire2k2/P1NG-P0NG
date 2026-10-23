@@ -1,4 +1,4 @@
-import {
+﻿import {
   AI_BASE_MAX_SPEED,
   BALL_MAX_SPEED,
   BALL_RADIUS,
@@ -89,8 +89,8 @@ export interface Ball {
   r: number
   speed: number
   /**
-   * Raquette qui a frappé la balle en dernier : 0 = gauche, 1 = droite,
-   * -1 = aucune (au service). La balle prend la couleur de son propriétaire.
+   * Raquette qui a frappÃ© la balle en dernier : 0 = gauche, 1 = droite,
+   * -1 = aucune (au service). La balle prend la couleur de son propriÃ©taire.
    */
   owner: number
 }
@@ -98,18 +98,18 @@ export interface Ball {
 export interface AiState {
   targetY: number
   reactionTimer: number
-  /** Erreur de visée figée pour l'échange en cours (unités). */
+  /** Erreur de visÃ©e figÃ©e pour l'Ã©change en cours (unitÃ©s). */
   aimError: number
   aimLocked: boolean
 }
 
 /**
- * Monde de simulation : sans dépendance au DOM.
- * Le renderer et l'audio lisent l'état ; ils ne le modifient pas.
+ * Monde de simulation : sans dÃ©pendance au DOM.
+ * Le renderer et l'audio lisent l'Ã©tat ; ils ne le modifient pas.
  *
- * Déterminisme : par défaut l'aléatoire vient de `Math.random` (partie en
- * direct). `setSeed` installe un générateur déterministe — la simulation
- * headless (`npm run sim`) l'utilise pour être reproductible d'un run à l'autre.
+ * DÃ©terminisme : par dÃ©faut l'alÃ©atoire vient de `Math.random` (partie en
+ * direct). `setSeed` installe un gÃ©nÃ©rateur dÃ©terministe â€” la simulation
+ * headless (`npm run sim`) l'utilise pour Ãªtre reproductible d'un run Ã  l'autre.
  */
 export class World {
   phase: Phase = 'serve'
@@ -121,7 +121,7 @@ export class World {
   /** Toutes les balles en jeu (multi-balle possible). */
   balls: Ball[] = []
 
-  /** Accès à la balle principale (compatibilité). */
+  /** AccÃ¨s Ã  la balle principale (compatibilitÃ©). */
   get ball(): Ball {
     if (this.balls.length === 0) {
       this.balls.push({
@@ -146,11 +146,11 @@ export class World {
   target = 11
   /** Format de la manche en cours. */
   format: MatchFormat = 'points'
-  /** Durée d'une manche chronométrée (secondes). */
+  /** DurÃ©e d'une manche chronomÃ©trÃ©e (secondes). */
   roundDuration = 180
-  /** Temps restant en mode « temps » ; -1 quand la manche n'est pas chronométrée. */
+  /** Temps restant en mode Â« temps Â» ; -1 quand la manche n'est pas chronomÃ©trÃ©e. */
   timeLeft = -1
-  /** La manche s'est terminée sur une égalité. */
+  /** La manche s'est terminÃ©e sur une Ã©galitÃ©. */
   draw = false
 
   /** Mode powerups : des bonus apparaissent sur le terrain. */
@@ -160,12 +160,19 @@ export class World {
    * pour casser toutes les briques ; il perd une vie si la balle passe.
    */
   brickMode = false
+  /** Mode casse-brique IA : l'ordinateur a ses propres briques. */
+  aiBrickMode = false
+  aiBricks: Brick[] = []
+  /** Nombre de briques IA encore debout. */
+  aiBricksLeft = 0
+  /** Briques cassées par l'IA (score IA en mode adversaire). */
+  aiBricksBroken = 0
   bricks: Brick[] = []
   /** Nombre de briques encore debout. */
   bricksLeft = 0
   /** Vies restantes en mode casse-brique. */
   brickLives = 3
-  /** Briques cassées (score du mode casse-brique). */
+  /** Briques cassÃ©es (score du mode casse-brique). */
   bricksBroken = 0
   powerups: Powerup[] = []
   private spawnTimer = 0
@@ -179,7 +186,7 @@ export class World {
   /** Aimant (secondes restantes). */
   playerMagnet = 0
   aiMagnet = 0
-  /** Invisibilité (secondes restantes). */
+  /** InvisibilitÃ© (secondes restantes). */
   ghostTimer = 0
   /** Double raquette. */
   playerDouble = false
@@ -196,7 +203,7 @@ export class World {
   flash = 0
   paddleFlashPlayer = 0
   paddleFlashAi = 0
-  /** Impulsion de la grille : déclenchée à chaque point, amortie dans le temps. */
+  /** Impulsion de la grille : dÃ©clenchÃ©e Ã  chaque point, amortie dans le temps. */
   gridPulse = 0
 
   particles = new ParticleSystem()
@@ -206,19 +213,19 @@ export class World {
   playerColor: Rgb = [0.2, 0.9, 1]
   aiColor: Rgb = [1, 0.3, 0.7]
   difficulty: Difficulty = 'moyen'
-  /** En mode menu / pause : la balle reste garée, le joueur peut tester sa raquette. */
+  /** En mode menu / pause : la balle reste garÃ©e, le joueur peut tester sa raquette. */
   frozen = true
-  /** La raquette gauche est pilotée par le réseau (vue de l'invité). */
+  /** La raquette gauche est pilotÃ©e par le rÃ©seau (vue de l'invitÃ©). */
   playerRemote = false
-  /** La raquette droite est pilotée par le réseau au lieu de l'IA. */
+  /** La raquette droite est pilotÃ©e par le rÃ©seau au lieu de l'IA. */
   aiRemote = false
-  /** Cible reçue du réseau pour la raquette pilotée à distance. */
+  /** Cible reÃ§ue du rÃ©seau pour la raquette pilotÃ©e Ã  distance. */
   netPaddleY: number | null = null
 
   aiState: AiState = { targetY: FIELD_HEIGHT / 2, reactionTimer: 0, aimError: 0, aimLocked: false }
   /**
-   * Source d'aléatoire du monde. Par défaut `Math.random` (partie en direct) ;
-   * `setSeed` installe un générateur déterministe pour la simulation headless.
+   * Source d'alÃ©atoire du monde. Par dÃ©faut `Math.random` (partie en direct) ;
+   * `setSeed` installe un gÃ©nÃ©rateur dÃ©terministe pour la simulation headless.
    */
   private rng: () => number = Math.random
 
@@ -226,7 +233,7 @@ export class World {
     this.player = { x: PLAYER_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.playerColor }
     this.ai = { x: FIELD_WIDTH - AI_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.aiColor }
     this.balls = [{ x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }]
-    // Les particules suivent la même source d'aléatoire que le monde.
+    // Les particules suivent la mÃªme source d'alÃ©atoire que le monde.
     this.particles.rng = this.rng
   }
 
@@ -272,6 +279,7 @@ export class World {
     this.bricksBroken = 0
     this.brickLives = BRICK_LIVES
     if (this.brickMode) this.buildBricks()
+    if (this.aiBrickMode) this.buildAIBricks()
     this.playerHeightMul = 1
     this.aiHeightMul = 1
     this.ballSpeedMul = 1
@@ -300,7 +308,7 @@ export class World {
     this.parkBall()
     this.countdown = 2
     this.countdownStep = 0
-    // Le « 2 » reste affiché un temps avant de passer à « 1 ».
+    // Le Â« 2 Â» reste affichÃ© un temps avant de passer Ã  Â« 1 Â».
     this.serveTimer = COUNTDOWN_STEP
     this.serveTo = this.rng() < 0.5 ? 'player' : 'ai'
   }
@@ -358,7 +366,7 @@ export class World {
     this.aiMagnet = Math.max(0, this.aiMagnet - dt)
     this.ghostTimer = Math.max(0, this.ghostTimer - dt)
 
-    // Aimant : la balle dévie vers la raquette adverse.
+    // Aimant : la balle dÃ©vie vers la raquette adverse.
     if (this.playerMagnet > 0 || this.aiMagnet > 0) {
       for (const b of this.balls) {
         if (this.playerMagnet > 0 && b.vx < 0) {
@@ -381,8 +389,8 @@ export class World {
   }
 
   /**
-   * Chronomètre de manche : ne décompte pas pendant les services (la balle est
-   * garée) et met fin à la partie à zéro.
+   * ChronomÃ¨tre de manche : ne dÃ©compte pas pendant les services (la balle est
+   * garÃ©e) et met fin Ã  la partie Ã  zÃ©ro.
    */
   private updateClock(dt: number): void {
     if (this.format !== 'time' || this.phase === 'over') return
@@ -392,7 +400,7 @@ export class World {
     if (this.timeLeft <= 0) this.endByTime()
   }
 
-  /** Fin de manche au terme du chronomètre : le meilleur score gagne. */
+  /** Fin de manche au terme du chronomÃ¨tre : le meilleur score gagne. */
   private endByTime(): void {
     this.timeLeft = 0
     this.phase = 'over'
@@ -413,7 +421,7 @@ export class World {
     const target = clamp(this.playerTargetY, half, FIELD_HEIGHT - half)
     const dy = target - p.y
     if (p.snappy) {
-      // Contrôle à la souris : la raquette colle au curseur, sans retard.
+      // ContrÃ´le Ã  la souris : la raquette colle au curseur, sans retard.
       p.y = target
       p.vy = dt > 0 ? clamp(dy / dt, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED) : 0
       return
@@ -428,7 +436,7 @@ export class World {
     this.serveTimer -= dt
     if (this.serveTimer > 0) return
     if (this.countdown > 0) {
-      // On annonce la valeur affichée, puis on décrémente.
+      // On annonce la valeur affichÃ©e, puis on dÃ©crÃ©mente.
       this.push({ type: 'countdown', value: this.countdown })
       this.countdown--
       this.serveTimer = COUNTDOWN_STEP
@@ -510,7 +518,7 @@ export class World {
             this.push({ type: 'wallHit', x: brickCx, y: brickCy })
 
             // Mode casse-brique : pas d'adversaire, le score compte les
-            // briques cassées. Victoire quand il n'en reste plus.
+            // briques cassÃ©es. Victoire quand il n'en reste plus.
             if (this.brickMode) {
               this.scorePlayer = this.bricksBroken
               if (this.bricksLeft <= 0) {
@@ -522,7 +530,45 @@ export class World {
               break
             }
 
-            // Point pour celui qui a frappé.
+            // Briques IA : collisions avec les briques de l'ordinateur
+            if (this.aiBrickMode) {
+              for (const brick of this.aiBricks) {
+                if (!brick.alive) continue
+                const overlapX = b.x + b.r > brick.x && b.x - b.r < brick.x + brick.w
+                const overlapY = b.y + b.r > brick.y && b.y - b.r < brick.y + brick.h
+                if (overlapX && overlapY) {
+                  brick.alive = false
+                  this.aiBricksLeft--
+                  this.aiBricksBroken++
+                  const brickCx = brick.x + brick.w / 2
+                  const brickCy = brick.y + brick.h / 2
+                  const dx = b.x - brickCx
+                  const dy = b.y - brickCy
+                  if (Math.abs(dx) / brick.w > Math.abs(dy) / brick.h) b.vx = -b.vx
+                  else b.vy = -b.vy
+                  this.shake = Math.max(this.shake, 0.3)
+                  this.flash = Math.max(this.flash, 0.2)
+                  this.particles.burst(brickCx, brickCy, 10, brick.color, {
+                    speed: 180,
+                    spread: TAU,
+                    life: 0.4,
+                    size: 4,
+                  })
+                  this.push({ type: 'wallHit', x: brickCx, y: brickCy })
+
+                  // Victoire : premier joueur à effacer toutes les briques de l'adversaire gagne
+                  if (this.aiBricksLeft <= 0) {
+                    this.phase = 'over'
+                    this.draw = false
+                    this.winner = b.owner === 0 ? 'player' : 'ai'
+                    this.push({ type: 'win', side: this.winner })
+                  }
+                  break
+                }
+              }
+            }
+
+            // Point pour celui qui a frappÃ©.
             if (b.owner === 0) this.scorePlayer++
             else if (b.owner === 1) this.scoreAi++
             if (this.format === 'points' && (this.scorePlayer >= this.target || this.scoreAi >= this.target)) {
@@ -582,7 +628,7 @@ export class World {
     let vx = Math.cos(angle) * speed * dir
     let vy = Math.sin(angle) * speed
 
-    // Effet : la vitesse verticale du paddle déforme slightly la trajectoire
+    // Effet : la vitesse verticale du paddle dÃ©forme slightly la trajectoire
     vy += p.vy * SPIN_TRANSFER
     const mag = Math.hypot(vx, vy) || 1
     vx = (vx / mag) * speed
@@ -684,7 +730,7 @@ export class World {
         else this.playerHeightMul = Math.max(0.6, this.playerHeightMul * 0.7)
         break
       case 'multiball':
-        // Dédouble la balle principale.
+        // DÃ©double la balle principale.
         if (this.balls.length < 4) {
           const src = this.balls[0] ?? this.ball
           this.balls.push({
@@ -703,14 +749,14 @@ export class World {
         else this.aiShield = true
         break
       case 'teleport':
-        // La balle saute de l'autre côté du terrain.
+        // La balle saute de l'autre cÃ´tÃ© du terrain.
         for (const b of this.balls) {
           b.x = FIELD_WIDTH - b.x
           b.vx = -b.vx
         }
         break
       case 'magnet':
-        // La balle est attirée vers le centre de la raquette adverse.
+        // La balle est attirÃ©e vers le centre de la raquette adverse.
         if (owner === 0) this.aiMagnet = 1.5
         else this.playerMagnet = 1.5
         break
@@ -719,7 +765,7 @@ export class World {
         this.ghostTimer = 1.2
         break
       case 'double':
-        // Deux raquettes empilées pour le ramasseur.
+        // Deux raquettes empilÃ©es pour le ramasseur.
         if (owner === 0) this.playerDouble = true
         else this.aiDouble = true
         break
@@ -730,11 +776,11 @@ export class World {
   }
 
   buildBricks(): void {
-    const cols = 8
-    const rows = 6
-    const bw = 40
-    const bh = 24
-    const gap = 8
+    const cols = 10
+    const rows = 8
+    const bw = 36
+    const bh = 20
+    const gap = 6
     const totalW = cols * bw + (cols - 1) * gap
     const startX = (FIELD_WIDTH - totalW) / 2
     const startY = (FIELD_HEIGHT - (rows * bh + (rows - 1) * gap)) / 2
@@ -760,8 +806,67 @@ export class World {
     this.bricksLeft = this.bricks.length
   }
 
+  buildAIBricks(): void {
+    const cols = 8
+    const rows = 4
+    const bw = 40
+    const bh = 24
+    const gap = 8
+    const totalW = cols * bw + (cols - 1) * gap
+    const startX = (FIELD_WIDTH - totalW) / 2
+    const startY = (FIELD_HEIGHT - (rows * bh + (rows - 1) * gap)) / 2
+    const colors: Rgb[] = [
+      [1, 0.3, 0.5],
+      [1, 0.6, 0.2],
+      [1, 0.85, 0.2],
+      [0.3, 0.9, 0.5],
+    ]
+    this.aiBricks = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        this.aiBricks.push({
+          x: startX + c * (bw + gap),
+          y: startY + r * (bh + gap),
+          w: bw,
+          h: bh,
+          alive: true,
+          color: colors[r % colors.length],
+        })
+      }
+    }
+    this.aiBricksLeft = this.aiBricks.length
+  }
+
   private onGoal(scorer: Side): void {
-    // Mode casse-brique : le but enlève une vie ; s'il en reste, on relance.
+    // Mode casse-brique IA : le but marque un point et on relance.
+    // Victoire : premier joueur à effacer toutes les briques de l'adversaire gagne.
+    if (this.aiBrickMode) {
+      this.scorePlayer = scorer === 'player' ? this.scorePlayer + 1 : this.scorePlayer
+      this.scoreAi = scorer === 'ai' ? this.scoreAi + 1 : this.scoreAi
+      this.lastScorer = scorer
+      this.phase = 'point'
+      this.serveTimer = POINT_PAUSE
+      this.shake = 1
+      this.flash = 1
+      this.gridPulse = 1
+      this.push({ type: 'score', side: scorer, value: scorer === 'player' ? this.scorePlayer : this.scoreAi })
+
+      // Vérifier victoire : si les briques de l'adversaire sont toutes cassées
+      if (scorer === 'player' && this.aiBricksLeft <= 0) {
+        this.phase = 'over'
+        this.draw = false
+        this.winner = 'player'
+        this.push({ type: 'win', side: 'player' })
+      } else if (scorer === 'ai' && this.bricksLeft <= 0) {
+        this.phase = 'over'
+        this.draw = false
+        this.winner = 'ai'
+        this.push({ type: 'lose', side: 'ai' })
+      }
+      return
+    }
+
+    // Mode casse-brique classique : le but enlÃ¨ve une vie ; s'il en reste, on relance.
     if (this.brickMode) {
       this.brickLives--
       if (this.brickLives <= 0) {
@@ -808,7 +913,7 @@ export class World {
     this.flash = 1
     this.gridPulse = 1
 
-    // Les effets des powerups s'arrêtent au point marqué.
+    // Les effets des powerups s'arrÃªtent au point marquÃ©.
     this.playerHeightMul = 1
     this.aiHeightMul = 1
     this.ballSpeedMul = 1
@@ -827,8 +932,8 @@ export class World {
 
     this.push({ type: 'score', side: scorer, value: scorer === 'player' ? this.scorePlayer : this.scoreAi })
 
-    // En mode « points » la manche s'arrête dès que la cible est atteinte ;
-    // en mode « temps » seul le chronomètre décide.
+    // En mode Â« points Â» la manche s'arrÃªte dÃ¨s que la cible est atteinte ;
+    // en mode Â« temps Â» seul le chronomÃ¨tre dÃ©cide.
     if (this.format === 'points' && (this.scorePlayer >= this.target || this.scoreAi >= this.target)) {
       this.phase = 'over'
       this.draw = false
@@ -843,7 +948,7 @@ export class World {
     }
   }
 
-  /** Raquette pilotée à distance : suit la cible reçue du réseau. */
+  /** Raquette pilotÃ©e Ã  distance : suit la cible reÃ§ue du rÃ©seau. */
   private updateNetPaddle(dt: number): void {
     const paddle = this.ai
     const half = paddle.height / 2
@@ -851,7 +956,7 @@ export class World {
     const desired = clamp(this.netPaddleY, half, FIELD_HEIGHT - half)
     const dy = desired - paddle.y
     if (paddle.snappy) {
-      // Raquette locale de l'invité : elle colle au curseur, sans retard.
+      // Raquette locale de l'invitÃ© : elle colle au curseur, sans retard.
       paddle.y = desired
       paddle.vy = dt > 0 ? clamp(dy / dt, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED) : 0
       return
@@ -862,7 +967,7 @@ export class World {
     paddle.vy = dt > 0 ? move / dt : 0
   }
 
-  /** IA : prédiction d'interception + délai de réaction + erreur humaine. */
+  /** IA : prÃ©diction d'interception + dÃ©lai de rÃ©action + erreur humaine. */
   private updateAi(dt: number): void {
     const profile = DIFFICULTY_PROFILES[this.difficulty]
     const state = this.aiState
@@ -873,8 +978,8 @@ export class World {
       state.reactionTimer = profile.reaction * randRange(0.75, 1.35, this.rng)
 
       if (this.ball.vx > 0) {
-        // Balle en approche : on fige une erreur de visée pour tout l'échange,
-        // comme un joueur humain qui vise un point (parfois raté).
+        // Balle en approche : on fige une erreur de visÃ©e pour tout l'Ã©change,
+        // comme un joueur humain qui vise un point (parfois ratÃ©).
         if (!state.aimLocked) {
           const sign = this.rng() < 0.5 ? -1 : 1
           state.aimError = sign * profile.error * (0.5 + this.rng() * 0.9)
@@ -900,7 +1005,7 @@ export class World {
     paddle.vy = dt > 0 ? move / dt : 0
   }
 
-  /** Prédit la Y d'interception de la balle (simulation grossière, sans rebonds de paddle). */
+  /** PrÃ©dit la Y d'interception de la balle (simulation grossiÃ¨re, sans rebonds de paddle). */
   private predictIntercept(): number {
     const b = this.ball
     if (b.vx <= 0) return FIELD_HEIGHT / 2
