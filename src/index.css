@@ -96,14 +96,16 @@ canvas {
 
 .primary-button {
   color: #05060a;
+  font-family: 'Orbitron', 'Outfit', system-ui, sans-serif;
   background: linear-gradient(
     120deg,
     var(--accent),
     color-mix(in srgb, var(--accent) 45%, #ffffff)
   );
   box-shadow:
-    0 0 22px -4px var(--accent),
-    0 0 60px -18px var(--accent);
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 18px -2px color-mix(in srgb, var(--accent) 55%, transparent),
+    inset 0 0 18px -8px color-mix(in srgb, var(--accent) 70%, transparent);
   transition:
     filter 0.18s ease,
     transform 0.12s ease,
@@ -114,8 +116,14 @@ canvas {
   filter: brightness(1.12);
   transform: translateY(-1px);
   box-shadow:
-    0 0 30px -2px var(--accent),
-    0 0 80px -16px var(--accent);
+    0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 30px -2px color-mix(in srgb, var(--accent) 85%, transparent),
+    0 0 80px -16px color-mix(in srgb, var(--accent) 90%, transparent),
+    inset 0 0 26px -10px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+
+.primary-button:active {
+  transform: translateY(1px);
 }
 
 .primary-button:active {
