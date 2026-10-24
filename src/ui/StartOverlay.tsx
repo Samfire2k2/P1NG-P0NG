@@ -89,7 +89,7 @@ export default function StartOverlay({
             [
               { id: 'ai' as const, label: 'Contre l’IA', hint: '4 niveaux' },
               { id: 'online' as const, label: 'En ligne', hint: 'Duel à deux' },
-              { id: 'brick' as const, label: 'Casse-brique', hint: 'Solo · 3 vies' },
+              { id: 'brick' as const, label: 'Casse-brique', hint: 'Solo · portrait' },
             ]
           ).map((item) => {
             const active = tab === item.id
@@ -147,11 +147,12 @@ export default function StartOverlay({
                 </div>
                 <h1 className="ping-title mt-3 text-4xl leading-[0.95] font-extrabold tracking-tight sm:text-5xl">
                   CASSE-BRIQUE
-                  <span className="block text-2xl leading-tight sm:text-3xl">Détruis toutes les briques</span>
+                  <span className="block text-2xl leading-tight sm:text-3xl">Contre un mur de briques</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Casse toutes les briques avec la balle. Chaque brique détruite rapporte un
-                  point. Si la balle passe ta raquette, tu perds une vie. 3 vies en tout.
+                  Joue seul contre un mur de briques : renvoie la balle avec ta raquette pour
+                  toutes les détruire. Ce mode se joue uniquement en portrait. Tu as 3 vies ;
+                  chaque balle manquée t’en coûte une.
                 </p>
               </>
             ) : (
@@ -287,6 +288,11 @@ export default function StartOverlay({
                   </>
                 )}
 
+                <details className="mt-5 rounded-xl border border-white/8 bg-black/20 p-3">
+                  <summary className="cursor-pointer text-xs font-semibold tracking-[0.12em] text-zinc-300">
+                    Personnaliser le jeu
+                  </summary>
+                  <div className="mt-3">
                 {/* Powerups */}
                 <div className="mt-4 flex items-center justify-between">
                   <span className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
@@ -408,6 +414,8 @@ export default function StartOverlay({
                   </div>
                 </div>
               )}
+                  </div>
+                </details>
 
               {/* Astuce de contrôle */}
               <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
