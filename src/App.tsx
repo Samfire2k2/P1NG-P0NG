@@ -9,11 +9,16 @@ import EndOverlay from './ui/EndOverlay'
 import Hud from './ui/Hud'
 import PauseOverlay from './ui/PauseOverlay'
 import StartOverlay, { type GameModeTab } from './ui/StartOverlay'
+import TutorialOverlay from './ui/TutorialOverlay'
+import type { DailyChallenge, ReplayFrame } from './game/arcade'
 
 const STORAGE_KEY = 'p1ng-p0ng-settings'
 const NAME_KEY = 'p1ng-p0ng-name'
 const HISTORY_KEY = 'p1ng-p0ng-history'
 const LEADERBOARD_KEY = 'p1ng-p0ng-leaderboard'
+const CHALLENGE_KEY = 'p1ng-p0ng-challenges'
+const ACHIEVEMENT_KEY = 'p1ng-p0ng-achievements'
+const STREAK_KEY = 'p1ng-p0ng-streak'
 interface LeaderEntry { name: string; score: number; date: string }
 function loadLeaderboard(): Record<string, LeaderEntry[]> {
   if (typeof window === 'undefined') return {}
@@ -34,11 +39,15 @@ function saveLeaderboard(lb: Record<string, LeaderEntry[]>): void {
 interface HistoryEntry {
   date: string
   mode: 'ai' | 'online'
+  brickMode?: boolean
   format: string
   scorePlayer: number
   scoreAi: number
+  result?: 'win' | 'loss' | 'draw'
   difficulty: string
   target: number
+  challengeCode?: string
+  contractComplete?: boolean
 }
 function loadHistory(): HistoryEntry[] {
   if (typeof window === 'undefined') return []
@@ -73,6 +82,10 @@ interface Settings {
   /** Orientation du terrain. */
   orientation: 'landscape' | 'portrait'
   muted: boolean
+  musicMuted: boolean
+  sensitivity: number
+  reduceMotion: boolean
+  highContrast: boolean
   glow: number
 }
 
@@ -84,10 +97,14 @@ const DEFAULT_SETTINGS: Settings = {
   duration: 180,
   powerups: false,
   brickMode: false,
-  theme: 0,
+  theme: 4,
   orientation: 'landscape',
   muted: false,
-  glow: 1,
+  musicMuted: false,
+  sensitivity: 1,
+  reduceMotion: typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches),
+  highContrast: false,
+  glow: 0.8,
 }
 
 function loadSettings(): Settings {
@@ -95,7 +112,7 @@ function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULT_SETTINGS
-    const parsed = JSON.parse(raw) as Partial<Settings>
+    const parsed = JSON.parse(raw) as Partial<Settings> & { visualStyleVersion?: number }
     const difficulty = DIFFICULTIES.includes(parsed.difficulty as Difficulty)
       ? (parsed.difficulty as Difficulty)
       : DEFAULT_SETTINGS.difficulty
@@ -107,9 +124,17 @@ function loadSettings(): Settings {
       duration: typeof parsed.duration === 'number' ? parsed.duration : DEFAULT_SETTINGS.duration,
       powerups: Boolean(parsed.powerups),
       brickMode: Boolean(parsed.brickMode),
-      theme: typeof parsed.theme === 'number' ? parsed.theme : 0,
+      theme: parsed.visualStyleVersion === 2 && typeof parsed.theme === 'number'
+        ? Math.max(0, Math.min(4, parsed.theme))
+        : DEFAULT_SETTINGS.theme,
       orientation: parsed.brickMode || parsed.orientation === 'portrait' ? 'portrait' : 'landscape',
       muted: Boolean(parsed.muted),
+      musicMuted: Boolean(parsed.musicMuted),
+      sensitivity: typeof parsed.sensitivity === 'number' ? Math.min(1.5, Math.max(0.5, parsed.sensitivity)) : DEFAULT_SETTINGS.sensitivity,
+      reduceMotion: typeof parsed.reduceMotion === 'boolean'
+        ? parsed.reduceMotion
+        : DEFAULT_SETTINGS.reduceMotion,
+      highContrast: Boolean(parsed.highContrast),
       glow: typeof parsed.glow === 'number' ? parsed.glow : DEFAULT_SETTINGS.glow,
     }
   } catch {
@@ -119,7 +144,7 @@ function loadSettings(): Settings {
 
 function saveSettings(settings: Settings): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, visualStyleVersion: 2 }))
   } catch {
     /* stockage indisponible */
   }
@@ -151,8 +176,20 @@ export default function App() {
   const [state, setState] = useState<EngineState | null>(null)
   const [settings, setSettings] = useState<Settings>(loadSettings)
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
+  const [achievements, setAchievements] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(ACHIEVEMENT_KEY) ?? '[]') as string[] } catch { return [] }
+  })
+  const [dailyStreak, setDailyStreak] = useState<{ lastDate: string; count: number }>(() => {
+    try { return JSON.parse(localStorage.getItem(STREAK_KEY) ?? '{"lastDate":"","count":0}') as { lastDate: string; count: number } }
+    catch { return { lastDate: '', count: 0 } }
+  })
+  const [challengeRecords, setChallengeRecords] = useState<Record<string, { best: number; contract: boolean; replay?: ReplayFrame[] }>>(() => {
+    try { return JSON.parse(localStorage.getItem(CHALLENGE_KEY) ?? '{}') as Record<string, { best: number; contract: boolean; replay?: ReplayFrame[] }> }
+    catch { return {} }
+  })
   const [leaderboard, setLeaderboard] = useState<Record<string, LeaderEntry[]>>(loadLeaderboard)
   const [splash, setSplash] = useState(true)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
   const [tab, setTab] = useState<GameModeTab>(() => settings.brickMode ? 'brick' : 'ai')
@@ -164,18 +201,64 @@ export default function App() {
   useEffect(() => {
     if (!state) return
     if (state.phase === 'gameover' && lastPhaseRef.current !== 'gameover') {
+      const localScore = state.side === 'left' ? state.scorePlayer : state.scoreAi
+      const opponentScore = state.side === 'left' ? state.scoreAi : state.scorePlayer
+      const result = state.trainingExercise
+        ? state.winner === 'player' ? 'win' : 'loss'
+        : state.survivalMode
+          ? 'loss'
+          : state.brickMode
+        ? state.winner === 'player' ? 'win' : 'loss'
+        : localScore === opponentScore ? 'draw' : localScore > opponentScore ? 'win' : 'loss'
       const entry: HistoryEntry = {
         date: new Date().toISOString(),
         mode: state.mode,
-        format: state.format,
-        scorePlayer: state.scorePlayer,
-        scoreAi: state.scoreAi,
+        brickMode: state.brickMode,
+        format: state.brickMode ? 'bricks' : state.format,
+        scorePlayer: state.brickMode ? state.bricksBroken : localScore,
+        scoreAi: state.brickMode ? 0 : opponentScore,
+        result,
         difficulty: state.difficulty,
         target: state.target,
+        challengeCode: state.challenge?.code,
+        contractComplete: state.contractComplete,
       }
       setHistory((prev) => {
         const next = [entry, ...prev].slice(0, 20)
         saveHistory(next)
+        return next
+      })
+      if (state.challenge) {
+        setChallengeRecords((prev) => {
+          const old = prev[state.challenge!.id] ?? { best: 0, contract: false }
+          const isBest = localScore > old.best
+          const updated = { ...prev, [state.challenge!.id]: { best: Math.max(old.best, localScore), contract: old.contract || state.contractComplete, replay: isBest || !old.replay?.length ? state.replayFrames : old.replay } }
+          const next = Object.fromEntries(Object.entries(updated).sort(([a], [b]) => b.localeCompare(a)).slice(0, 30)) as typeof updated
+          try { localStorage.setItem(CHALLENGE_KEY, JSON.stringify(next)) } catch { /* stockage indisponible */ }
+          return next
+        })
+        const today = new Date().toISOString().slice(0, 10)
+        if (state.challenge.date === today) {
+          setDailyStreak((previous) => {
+            if (previous.lastDate === today) return previous
+            const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+            const next = { lastDate: today, count: previous.lastDate === yesterday ? previous.count + 1 : 1 }
+            try { localStorage.setItem(STREAK_KEY, JSON.stringify(next)) } catch { /* stockage indisponible */ }
+            return next
+          })
+        }
+      }
+      const newBadges: string[] = []
+      if (result === 'win') newBadges.push('first-win')
+      if (state.matchStats.paddleHits >= 20) newBadges.push('rally-ace')
+      if (state.matchStats.powerups >= 3) newBadges.push('collector')
+      if (state.survivalMode && state.scorePlayer > 0) newBadges.push('survivor')
+      if (state.brickMode && state.bricksBroken >= 20) newBadges.push('brick-breaker')
+      if (state.challenge && state.contractComplete) newBadges.push('contract')
+      if (history.length >= 9) newBadges.push('veteran')
+      if (newBadges.length) setAchievements((previous) => {
+        const next = Array.from(new Set([...previous, ...newBadges]))
+        try { localStorage.setItem(ACHIEVEMENT_KEY, JSON.stringify(next)) } catch { /* stockage indisponible */ }
         return next
       })
       if (state.mode === 'online' && state.roomCode) {
@@ -183,8 +266,8 @@ export default function App() {
           const code = state.roomCode
           const list = prev[code] ?? []
           const next = [
-            { name: state.playerName || 'Toi', score: state.scorePlayer, date: new Date().toISOString() },
-            { name: state.peerName || 'Adversaire', score: state.scoreAi, date: new Date().toISOString() },
+            { name: state.playerName || 'Toi', score: state.side === 'left' ? state.scorePlayer : state.scoreAi, date: new Date().toISOString() },
+            { name: state.peerName || 'Adversaire', score: state.side === 'left' ? state.scoreAi : state.scorePlayer, date: new Date().toISOString() },
             ...list,
           ].slice(0, 20)
           const updated = { ...prev, [code]: next }
@@ -195,6 +278,15 @@ export default function App() {
     }
     lastPhaseRef.current = state.phase
   }, [state?.phase])
+  useEffect(() => {
+    if (dailyStreak.count < 3) return
+    setAchievements((previous) => {
+      if (previous.includes('streak-3')) return previous
+      const next = [...previous, 'streak-3']
+      try { localStorage.setItem(ACHIEVEMENT_KEY, JSON.stringify(next)) } catch { /* stockage indisponible */ }
+      return next
+    })
+  }, [dailyStreak.count])
   const playerNameRef = useRef(playerName)
   playerNameRef.current = playerName
 
@@ -253,27 +345,44 @@ export default function App() {
   // Synchronisation de l'accent visuel : couleur locale et couleur de l'adversaire
   useEffect(() => {
     const root = document.documentElement
-    const player = rgbToCss(hsvToRgb(settings.color.h, settings.color.s, settings.color.v))
     const remote = state?.peerColor ?? aiHsvFrom(settings.color)
     const ai = rgbToCss(hsvToRgb(remote.h, remote.s, remote.v))
-    root.style.setProperty('--accent', player)
+    root.style.setProperty('--accent', '#c7edff')
     root.style.setProperty('--accent-ai', ai)
   }, [settings.color, state?.peerColor])
 
   // Persistance
   useEffect(() => {
     saveSettings(settings)
-    engineRef.current?.setMuted(settings.muted)
   }, [settings])
+
+  useEffect(() => {
+    engineRef.current?.setMuted(settings.muted)
+  }, [settings.muted])
+
+  useEffect(() => {
+    music.setMuted(settings.musicMuted)
+  }, [settings.musicMuted])
+
+  useEffect(() => {
+    engineRef.current?.setSensitivity(settings.sensitivity)
+  }, [settings.sensitivity])
+
+  useEffect(() => {
+    const root = document.querySelector('.arcade-shell')
+    root?.classList.toggle('reduce-motion', settings.reduceMotion)
+    root?.classList.toggle('high-contrast', settings.highContrast)
+  }, [settings.reduceMotion, settings.highContrast])
 
   // Intensité du glow (bloom + aberration chromatique)
   useEffect(() => {
     engineRef.current?.setRenderSettings({
       bloomIntensity: settings.glow,
-      chromatic: 0.0008 + settings.glow * 0.0012,
+      chromatic: settings.glow * 0.002,
       theme: settings.theme,
+      reducedMotion: settings.reduceMotion,
     })
-  }, [settings.glow, settings.theme])
+  }, [settings.glow, settings.theme, settings.reduceMotion])
 
   // Powerups / orientation / durée
   useEffect(() => {
@@ -348,14 +457,16 @@ export default function App() {
 
   const handleModeTabChange = useCallback((nextTab: GameModeTab) => {
     setTab(nextTab)
+    engineRef.current?.setArcadeChallenge(null)
+    engineRef.current?.setSurvivalMode(false)
+    engineRef.current?.setLocalDuel(false)
+    engineRef.current?.setTrainingExercise(null)
     const brickMode = nextTab === 'brick'
     setSettings((prev) => ({
       ...prev,
       brickMode,
       ...(brickMode ? { orientation: 'portrait' as const } : {}),
     }))
-    engineRef.current?.setBrickMode(brickMode)
-    if (brickMode) engineRef.current?.setOrientation('portrait')
     audio.click()
   }, [])
 
@@ -371,6 +482,10 @@ export default function App() {
       audio.setMuted(muted)
       return { ...prev, muted }
     })
+  }, [])
+
+  const handleToggleMusic = useCallback(() => {
+    setSettings((prev) => ({ ...prev, musicMuted: !prev.musicMuted }))
   }, [])
 
   const handleFullscreen = useCallback(() => {
@@ -418,15 +533,19 @@ export default function App() {
   const online = state?.mode === 'online'
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#05060a]">
+    <div className={`arcade-shell relative h-full w-full overflow-hidden${settings.reduceMotion ? ' reduce-motion' : ''}${settings.highContrast ? ' high-contrast' : ''}`}>
       {splash && (
         <div
-          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#05060a]"
+          className="terminal-backdrop startup-splash absolute inset-0 z-50 flex flex-col items-center justify-center"
         >
+          <div className="terminal-bar absolute top-6 right-6 left-6 border-0 sm:top-8 sm:right-10 sm:left-10">
+            <span>P1NG-P0NG // système d’arcade</span>
+            <span className="terminal-status">Prêt</span>
+          </div>
           <h1 className="ping-title text-7xl font-extrabold tracking-tight sm:text-8xl">
-            P1NG-P0NG
+            P<span className="brand-dark-digit">1</span>NG-P<span className="brand-dark-digit">0</span>NG
           </h1>
-          <p className="mt-4 text-sm tracking-[0.4em] text-zinc-500 uppercase">pong néon</p>
+          <p className="mt-4 text-[10px] tracking-[0.42em] text-zinc-500 uppercase">Terminal de jeu // pong</p>
           <button
             type="button"
             onClick={() => setSplash(false)}
@@ -437,7 +556,7 @@ export default function App() {
           </button>
         </div>
       )}
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <canvas ref={canvasRef} className="absolute inset-0 z-0 h-full w-full" />
 
       {!state && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#05060a] text-sm tracking-[0.3em] text-zinc-600 uppercase">
@@ -451,12 +570,14 @@ export default function App() {
           onTogglePause={() => {
             audio.click()
             engineRef.current?.togglePause()
-          }}
+  }}
           onRestart={() => {
             audio.click()
             engineRef.current?.restart()
           }}
           onToggleMute={handleToggleMute}
+          musicMuted={settings.musicMuted}
+          onToggleMusic={handleToggleMusic}
           onFullscreen={handleFullscreen}
           onMenu={() => {
             audio.click()
@@ -467,6 +588,7 @@ export default function App() {
               engineRef.current?.backToMenu()
             }
           }}
+          onTouchDirection={(direction, active) => engineRef.current?.setTouchDirection(direction, active)}
         />
       )}
 
@@ -509,6 +631,92 @@ export default function App() {
           canStart={state.mode === 'online' && state.side === 'left' && state.peerConnected}
           onNameChange={handleNameChange}
           onStartMatch={handleStartMatch}
+          musicMuted={settings.musicMuted}
+          onToggleMusic={handleToggleMusic}
+          onToggleEffects={handleToggleMute}
+          sensitivity={settings.sensitivity}
+          onSensitivity={(value) => {
+            setSettings((prev) => ({ ...prev, sensitivity: value }))
+            engineRef.current?.setSensitivity(value)
+          }}
+          reduceMotion={settings.reduceMotion}
+          onReduceMotion={(value) => setSettings((prev) => ({ ...prev, reduceMotion: value }))}
+          highContrast={settings.highContrast}
+          onHighContrast={(value) => setSettings((prev) => ({ ...prev, highContrast: value }))}
+          onTutorial={() => setTutorialOpen(true)}
+          onDailyChallenge={(challenge: DailyChallenge | null) => {
+            if (challenge) {
+              engineRef.current?.setBrickMode(false)
+              engineRef.current?.setOrientation('landscape')
+              engineRef.current?.setPowerups(false)
+            }
+            engineRef.current?.setArcadeChallenge(challenge, challenge ? (challengeRecords[challenge.id]?.replay ?? []) : [])
+            if (challenge) {
+              setTab('ai')
+              setSettings((prev) => ({ ...prev, difficulty: challenge.difficulty, target: challenge.target, format: 'points', powerups: false, brickMode: false, orientation: 'landscape' }))
+              const record = challengeRecords[challenge.id]
+              const suffix = record ? ` // RECORD LOCAL ${record.best} POINTS · CONTRATS ${record.contract ? 'VALIDÉ' : 'NON VALIDÉ'}` : ''
+              // Retour affiché dans le terminal au prochain rendu par son état de défi.
+              console.info(`Défi ${challenge.code}${suffix}`)
+            }
+          }}
+          challengeRecord={state.challenge ? {
+            best: challengeRecords[state.challenge.id]?.best ?? 0,
+            contract: challengeRecords[state.challenge.id]?.contract ?? false,
+            hasReplay: !!challengeRecords[state.challenge.id]?.replay?.length,
+          } : undefined}
+          achievements={achievements}
+          dailyStreak={dailyStreak.count}
+          unlockedThemes={[0, 1, 2, 3, 4, ...(achievements.includes('first-win') ? [5] : []), ...(achievements.includes('streak-3') ? [6] : [])]}
+          onSurvival={(enabled) => {
+            if (enabled) {
+              engineRef.current?.setBrickMode(false)
+              engineRef.current?.setOrientation('landscape')
+            }
+            engineRef.current?.setArcadeChallenge(null)
+            engineRef.current?.setSurvivalMode(enabled)
+            if (enabled) {
+              setTab('ai')
+              setSettings((prev) => ({ ...prev, difficulty: 'facile', target: 99, format: 'points', powerups: false, brickMode: false, orientation: 'landscape' }))
+            }
+          }}
+          onLocalDuel={(enabled) => {
+            if (enabled) {
+              engineRef.current?.setBrickMode(false)
+              engineRef.current?.setOrientation('landscape')
+            }
+            engineRef.current?.setArcadeChallenge(null)
+            engineRef.current?.setLocalDuel(enabled)
+            if (enabled) {
+              setTab('ai')
+              setSettings((prev) => ({ ...prev, brickMode: false, orientation: 'landscape' }))
+            }
+          }}
+          onTrainingExercise={(exercise) => {
+            if (exercise) {
+              engineRef.current?.setBrickMode(false)
+              engineRef.current?.setOrientation('landscape')
+            }
+            engineRef.current?.setArcadeChallenge(null)
+            engineRef.current?.setTrainingExercise(exercise)
+            if (exercise) {
+              setTab('ai')
+              setSettings((prev) => ({ ...prev, difficulty: 'facile', target: 99, format: 'points', powerups: false, brickMode: false, orientation: 'landscape' }))
+            }
+          }}
+        />
+      )}
+
+      {tutorialOpen && state?.phase === 'menu' && (
+        <TutorialOverlay
+          onClose={() => setTutorialOpen(false)}
+          startLabel={tab === 'online' ? 'Retour au salon' : 'Lancer une partie'}
+          onStart={() => {
+            setTutorialOpen(false)
+            if (tab === 'online') return
+            audio.init()
+            engineRef.current?.start()
+          }}
         />
       )}
 

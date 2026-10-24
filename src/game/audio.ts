@@ -20,6 +20,8 @@ export interface AudioOptions {
   volume?: number
 }
 
+const midiToFreq = (note: number): number => 440 * Math.pow(2, (note - 69) / 12)
+
   const STORAGE_KEY = 'p1ng-p0ng-audio'
 
 export class AudioEngine {
@@ -113,9 +115,9 @@ export class AudioEngine {
     return this.ctx
   }
 
-  /** Bus d'entrée du compresseur : la musique y est routée. */
+  /** Sortie directe pour que le bus musique ait son propre volume. */
   get output(): AudioNode | null {
-    return this.compressor
+    return this.ctx?.destination ?? null
   }
 
   private get now(): number {
@@ -207,107 +209,122 @@ export class AudioEngine {
    * `offset` vaut 0 au centre de la raquette et 1 (ou -1) aux extrémités :
    * plus on frappe près du bord, plus le son est aigu et métallique.
    */
+  /** Synthesized paddle impact, pitched by contact position and force. */
   paddleHit(offset: number, power: number, isPlayer: boolean): void {
     if (!this.ctx || this.muted) return
-    const base = isPlayer ? 300 : 240
-    const edge = Math.abs(offset)
-    const freq = base * (1 + edge * 1.15)
-    this.tone(freq, 0.13, {
-      type: 'triangle',
-      gain: 0.16 + power * 0.1,
-      sweepTo: freq * 0.55,
-      attack: 0.002,
-    })
-    this.tone(freq * 2.02, 0.08, { type: 'square', gain: 0.05 + power * 0.04, sweepTo: freq * 1.2 })
-    this.noise(0.09, { gain: 0.1 + power * 0.07, freq: 1400 + power * 1600, q: 0.9, sweepTo: 420 })
-
-    // Extrémité de la raquette : claquement sec, de plus en plus présent.
-    if (edge > 0.55) {
-      const bite = (edge - 0.55) / 0.45
-      this.tone(freq * 3.01, 0.05, { type: 'square', gain: 0.03 + bite * 0.05, sweepTo: freq * 3.7 })
-      this.noise(0.04, { gain: 0.02 + bite * 0.05, freq: 4600 + bite * 2400, q: 2.4, sweepTo: 2200 })
-    }
+    const edge = Math.min(1, Math.abs(offset))
+    const base = isPlayer ? 196 : 164.81
+    const freq = base * (1 + edge * 2.2)
+    const level = Math.min(1, Math.max(0, power))
+    this.tone(freq, 0.105, { type: 'square', gain: 0.1 + level * 0.07, sweepTo: freq * 0.68, attack: 0.001 })
+    this.tone(freq * 2.5, 0.065, { type: 'triangle', gain: 0.045 + edge * 0.025, sweepTo: freq * 1.35, delay: 0.004 })
+    this.noise(0.035, { gain: 0.025 + level * 0.018, freq: 3200 + edge * 3200, q: 2.8, sweepTo: 900 })
+    if (edge > 0.68) this.tone(freq * 4, 0.035, { type: 'square', gain: 0.018 + edge * 0.02, sweepTo: freq * 2.2, delay: 0.008 })
   }
 
   wallHit(power: number): void {
     if (!this.ctx || this.muted) return
-    const freq = 150 + power * 70
-    this.tone(freq, 0.11, { type: 'sine', gain: 0.13, sweepTo: freq * 0.5 })
-    this.noise(0.06, { gain: 0.07, freq: 700, q: 1.4, sweepTo: 220 })
+    const freq = 220 + Math.max(0, power) * 85
+    this.tone(freq, 0.09, { type: 'triangle', gain: 0.095, sweepTo: freq * 0.62, attack: 0.001 })
+    this.tone(freq * 2.76, 0.045, { type: 'sine', gain: 0.035, delay: 0.006, sweepTo: freq * 1.8 })
+    this.noise(0.028, { gain: 0.028, freq: 1500, q: 3, sweepTo: 500 })
   }
 
   score(side: 'player' | 'ai'): void {
     if (!this.ctx || this.muted) return
-    const notes = side === 'player' ? [523.25, 659.25, 783.99, 1046.5] : [392, 329.63, 261.63]
-    notes.forEach((f, i) => {
-      this.tone(f, 0.3, { type: 'triangle', gain: 0.13, delay: i * 0.07, attack: 0.008 })
-      this.tone(f * 2, 0.18, { type: 'sine', gain: 0.05, delay: i * 0.07 })
+    const phrase = side === 'player' ? [57, 64, 69, 76] : [69, 64, 60, 57]
+    phrase.forEach((note, index) => {
+      const delay = index * 0.055
+      const freq = midiToFreq(note)
+      this.tone(freq, 0.18, { type: 'square', gain: index === 3 ? 0.1 : 0.075, delay, attack: 0.003, sweepTo: freq * 1.015 })
+      this.tone(freq * 2, 0.12, { type: 'sine', gain: 0.025, delay: delay + 0.006 })
     })
-    this.noise(0.3, { gain: 0.05, freq: 3200, q: 0.7, sweepTo: 900 })
+    this.noise(0.09, { gain: 0.025, freq: 4200, q: 2, sweepTo: 1100 })
   }
 
   countdown(value: number): void {
-    this.tone(440 + (3 - value) * 90, 0.12, { type: 'square', gain: 0.08, sweepTo: 330 })
+    const final = value <= 0
+    const freq = final ? 880 : midiToFreq(53 + Math.max(0, 3 - value) * 2)
+    this.tone(freq, final ? 0.22 : 0.115, { type: final ? 'triangle' : 'square', gain: final ? 0.11 : 0.075, sweepTo: freq * (final ? 1.5 : 0.92), attack: 0.002 })
+    this.tone(freq * 2.01, final ? 0.13 : 0.045, { type: 'sine', gain: final ? 0.045 : 0.018, delay: 0.008 })
+    if (final) this.noise(0.045, { gain: 0.035, freq: 5000, q: 2.5, sweepTo: 1800 })
   }
 
   serve(): void {
-    this.noise(0.28, { gain: 0.07, freq: 260, q: 0.8, sweepTo: 2400 })
-    this.tone(520, 0.16, { type: 'sine', gain: 0.09, sweepTo: 880 })
+    this.noise(0.19, { gain: 0.045, freq: 420, q: 1.4, sweepTo: 4200 })
+    this.tone(110, 0.2, { type: 'sawtooth', gain: 0.045, sweepTo: 55, attack: 0.004 })
+    this.tone(midiToFreq(76), 0.12, { type: 'triangle', gain: 0.075, delay: 0.075, sweepTo: midiToFreq(84), attack: 0.003 })
+    this.tone(midiToFreq(88), 0.08, { type: 'sine', gain: 0.025, delay: 0.12 })
   }
 
   win(): void {
     if (!this.ctx || this.muted) return
-    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5]
-    notes.forEach((f, i) => {
-      this.tone(f, 0.42, { type: 'triangle', gain: 0.15, delay: i * 0.09, attack: 0.01 })
-      this.tone(f * 1.5, 0.3, { type: 'sine', gain: 0.05, delay: i * 0.09 })
+    const phrase = [57, 64, 69, 72, 76, 81, 88]
+    phrase.forEach((note, index) => {
+      const delay = index * 0.075
+      const freq = midiToFreq(note)
+      this.tone(freq, 0.36, { type: index % 2 ? 'triangle' : 'square', gain: index > 4 ? 0.09 : 0.07, delay, attack: 0.008 })
+      if (index === phrase.length - 1) {
+        this.tone(freq * 1.5, 0.62, { type: 'sine', gain: 0.035, delay, attack: 0.02 })
+        this.tone(midiToFreq(45), 0.5, { type: 'triangle', gain: 0.07, delay, attack: 0.02 })
+      }
     })
+    this.noise(0.16, { gain: 0.03, freq: 5200, q: 1.8, sweepTo: 1600 })
   }
 
   lose(): void {
     if (!this.ctx || this.muted) return
-    const notes = [523.25, 415.3, 349.23, 261.63]
-    notes.forEach((f, i) => {
-      this.tone(f, 0.4, { type: 'sine', gain: 0.13, delay: i * 0.12 })
+    const notes = [57, 53, 50, 45]
+    notes.forEach((note, index) => {
+      const freq = midiToFreq(note)
+      this.tone(freq, 0.27, { type: 'sawtooth', gain: 0.085, delay: index * 0.105 })
+      this.tone(freq / 2, 0.21, { type: 'triangle', gain: 0.035, delay: index * 0.105 + 0.015 })
     })
+    this.noise(0.32, { gain: 0.035, freq: 900, q: 0.7, sweepTo: 130 })
   }
 
-  /** Match nul : deux notes plates, sans victoire ni défaite. */
+  /** Draw signal: a restrained, unresolved two-voice phrase. */
   draw(): void {
     if (!this.ctx || this.muted) return
-    const notes = [392, 392, 349.23]
-    notes.forEach((f, i) => {
-      this.tone(f, 0.34, { type: 'triangle', gain: 0.11, delay: i * 0.12, attack: 0.01 })
-      this.tone(f * 2, 0.2, { type: 'sine', gain: 0.04, delay: i * 0.12 })
+    const notes = [62, 62, 65, 64]
+    notes.forEach((note, index) => {
+      const freq = midiToFreq(note)
+      this.tone(freq, 0.26, { type: 'triangle', gain: 0.07, delay: index * 0.12, attack: 0.01 })
+      this.tone(freq * 1.5, 0.16, { type: 'sine', gain: 0.022, delay: index * 0.12 + 0.01 })
     })
   }
 
   hover(): void {
-    if (!this.throttle('hover', 60)) return
-    this.tone(1180, 0.05, { type: 'sine', gain: 0.035 })
+    if (!this.throttle('hover', 90)) return
+    this.tone(midiToFreq(84), 0.028, { type: 'square', gain: 0.018, sweepTo: midiToFreq(86), attack: 0.001 })
   }
 
   click(): void {
-    this.tone(760, 0.06, { type: 'square', gain: 0.07, sweepTo: 1240 })
-    this.tone(1520, 0.05, { type: 'sine', gain: 0.035, delay: 0.01 })
+    this.tone(midiToFreq(72), 0.045, { type: 'square', gain: 0.045, sweepTo: midiToFreq(67), attack: 0.001 })
+    this.tone(midiToFreq(84), 0.025, { type: 'triangle', gain: 0.018, delay: 0.008 })
+    this.noise(0.018, { gain: 0.012, freq: 6000, q: 3, sweepTo: 3000 })
   }
 
-  /** Powerup ramassé : arpège brillant dont la hauteur dépend du type. */
+  /** Each powerup gets its own rising interval signature. */
   powerup(type: number, isPlayer: boolean): void {
     if (!this.ctx || this.muted) return
-    const roots = [659.25, 523.25, 783.99, 392]
-    const root = roots[type % roots.length] ?? 523.25
-    const gain = isPlayer ? 0.14 : 0.11
-    this.tone(root, 0.18, { type: 'triangle', gain, attack: 0.004 })
-    this.tone(root * 1.5, 0.14, { type: 'sine', gain: gain * 0.5, delay: 0.04 })
-    this.tone(root * 2, 0.12, { type: 'square', gain: gain * 0.35, delay: 0.08, sweepTo: root * 2.4 })
+    const degrees = [0, 3, 7, 10, 12, 15, 19, 22, 24, 27]
+    const degree = degrees[((type % degrees.length) + degrees.length) % degrees.length] ?? 12
+    const root = midiToFreq(60 + degree)
+    const gain = isPlayer ? 0.095 : 0.075
+    this.tone(root, 0.12, { type: 'square', gain, attack: 0.002, sweepTo: root * 1.01 })
+    this.tone(root * 1.25, 0.105, { type: 'triangle', gain: gain * 0.72, delay: 0.035 })
+    this.tone(root * 1.5, 0.12, { type: 'sine', gain: gain * 0.5, delay: 0.07, sweepTo: root * 1.52 })
+    this.tone(root * 2, 0.09, { type: 'triangle', gain: gain * 0.4, delay: 0.105 })
+    this.noise(0.045, { gain: 0.02, freq: 6500 + type * 180, q: 2.4, sweepTo: 2600 })
   }
+
   hue(hue: number): void {
-    if (!this.ctx || this.muted) return
+    if (!this.ctx || this.muted || !this.throttle('hue', 45)) return
     const semis = (hue / 360) * 24
     const freq = 220 * Math.pow(2, semis / 12)
-    this.tone(freq, 0.12, { type: 'sine', gain: 0.075, sweepTo: freq * 1.01 })
-    this.tone(freq * 2, 0.07, { type: 'triangle', gain: 0.028, delay: 0.015 })
+    this.tone(freq, 0.06, { type: 'triangle', gain: 0.035, sweepTo: freq * 1.015 })
+    this.tone(freq * 2, 0.04, { type: 'sine', gain: 0.014, delay: 0.008 })
   }
 }
 

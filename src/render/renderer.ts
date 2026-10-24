@@ -7,7 +7,7 @@ import {
   TRAIL_LIFE,
 } from '../game/constants'
 import { clamp, lerp } from '../game/math'
-import type { World } from '../game/world'
+import type { PowerupType, World } from '../game/world'
 import { computeView } from './view'
 import { SPRITE_CIRCLE, SPRITE_GLOW, SPRITE_ROUNDBOX, SpriteBatch } from './batch'
 import {
@@ -40,6 +40,7 @@ export interface RenderSettings {
   scanlines: number
   grain: number
   theme: number
+  reducedMotion?: boolean
 }
 
 export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
@@ -251,8 +252,8 @@ export class Renderer {
     const view = computeView(w, h, orientation)
     const scale = view.scale
     const shake = world.shake
-    const shakeX = Math.sin(world.time * 97) * shake * 14
-    const shakeY = Math.cos(world.time * 113) * shake * 14
+    const shakeX = this.settings.reducedMotion ? 0 : Math.sin(world.time * 97) * shake * 14
+    const shakeY = this.settings.reducedMotion ? 0 : Math.cos(world.time * 113) * shake * 14
     const originX = view.originX + shakeX
     const originY = view.originY + shakeY
 
@@ -285,11 +286,11 @@ export class Renderer {
     this.uComposite.i('u_bloom', 1)
     this.uComposite.v2('u_resolution', w, h)
     this.uComposite.f('u_time', world.time)
-    this.uComposite.f('u_bloomIntensity', settings.bloomIntensity)
-    this.uComposite.f('u_chromatic', settings.chromatic)
+    this.uComposite.f('u_bloomIntensity', settings.reducedMotion ? Math.min(settings.bloomIntensity, 0.25) : settings.bloomIntensity)
+    this.uComposite.f('u_chromatic', settings.reducedMotion ? 0 : settings.chromatic)
     this.uComposite.f('u_vignette', settings.vignette)
-    this.uComposite.f('u_scanlines', settings.scanlines)
-    this.uComposite.f('u_grain', settings.grain)
+    this.uComposite.f('u_scanlines', settings.reducedMotion ? 0 : settings.scanlines)
+    this.uComposite.f('u_grain', settings.reducedMotion ? 0 : settings.grain)
     this.drawFullscreen()
   }
 
@@ -308,6 +309,9 @@ export class Renderer {
       { bg: [0.08, 0.02, 0.12], grid: [0.4, 0.1, 0.5], border: [1.0, 0.3, 0.6] },
       { bg: [0.0, 0.05, 0.0], grid: [0.0, 0.3, 0.1], border: [0.2, 0.8, 0.3] },
       { bg: [0.05, 0.05, 0.06], grid: [0.15, 0.15, 0.18], border: [0.5, 0.5, 0.6] },
+      { bg: [0.004, 0.014, 0.03], grid: [0.08, 0.20, 0.32], border: [0.62, 0.86, 1.0] },
+      { bg: [0.035, 0.012, 0.075], grid: [0.28, 0.08, 0.58], border: [0.82, 0.36, 1.0] },
+      { bg: [0.004, 0.045, 0.07], grid: [0.03, 0.32, 0.42], border: [0.26, 0.94, 0.82] },
     ]
     const theme = themes[this.settings.theme ?? 0] ?? themes[0]
     this.uBg.v3('u_bgBase', theme.bg[0], theme.bg[1], theme.bg[2])
@@ -341,7 +345,7 @@ export class Renderer {
     this.additive.begin()
 
     // Traînée de la balle : dégradé de couleur le long du sillage.
-    if (this.trailCount > 1) {
+    if (!this.settings.reducedMotion && this.trailCount > 1) {
       const last = this.trailCount - 1
       for (let k = 0; k < last; k++) {
         const i0 = (this.trailHead + k) % TRAIL_LENGTH
@@ -396,11 +400,13 @@ export class Renderer {
     const playerPos = this.orientation === 'portrait'
       ? { x: player.y, y: FIELD_WIDTH - player.x }
       : { x: player.x, y: player.y }
-    const aiPos = this.orientation === 'portrait'
-      ? { x: ai.y, y: FIELD_WIDTH - ai.x }
-      : { x: ai.x, y: ai.y }
     this.pushGlow(playerPos.x, playerPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.playerColor, 0.34, this.orientation)
-    this.pushGlow(aiPos.x, aiPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34, this.orientation)
+    if (!world.brickMode) {
+      const aiPos = this.orientation === 'portrait'
+        ? { x: ai.y, y: FIELD_WIDTH - ai.x }
+        : { x: ai.x, y: ai.y }
+      this.pushGlow(aiPos.x, aiPos.y, PADDLE_WIDTH * 1.9, PADDLE_HEIGHT * 0.82, world.aiColor, 0.34, this.orientation)
+    }
 
     // Halo de la balle
     const ballPos = this.orientation === 'portrait'
@@ -409,9 +415,20 @@ export class Renderer {
     const ballTint = ballColorOf(world)
     this.pushGlow(ballPos.x, ballPos.y, ball.r * 3.4, ball.r * 3.4, ballTint, 0.4)
 
+    if (world.ghostPaddleY !== null && world.ghostBall) {
+      const ghostPaddle = this.orientation === 'portrait'
+        ? { x: world.ghostPaddleY, y: FIELD_WIDTH - player.x }
+        : { x: player.x, y: world.ghostPaddleY }
+      const ghostBall = this.orientation === 'portrait'
+        ? { x: world.ghostBall.y, y: FIELD_WIDTH - world.ghostBall.x }
+        : world.ghostBall
+      this.pushGlow(ghostPaddle.x, ghostPaddle.y, PADDLE_WIDTH * 1.6, PADDLE_HEIGHT * 0.7, [0.55, 0.82, 1], 0.22, this.orientation)
+      this.pushGlow(ghostBall.x, ghostBall.y, ball.r * 2.4, ball.r * 2.4, [0.55, 0.82, 1], 0.18)
+    }
+
     // Particules
     const particles = world.particles
-    for (let i = 0; i < particles.count; i++) {
+    for (let i = 0; !this.settings.reducedMotion && i < particles.count; i++) {
       const life = particles.life[i] / Math.max(particles.maxLife[i], 0.0001)
       const kind = particles.kind[i]
       if (kind === 2) continue
@@ -452,7 +469,7 @@ export class Renderer {
       this.pushPaddle(p2, world.playerColor, 0, this.orientation)
     }
 
-    this.pushPaddle(ai, world.aiColor, world.paddleFlashAi, this.orientation)
+    if (!world.brickMode) this.pushPaddle(ai, world.aiColor, world.paddleFlashAi, this.orientation)
 
     if (world.aiDouble) {
       const a2 = { x: ai.x, y: ai.y + (this.orientation === 'portrait' ? PADDLE_HEIGHT * 0.6 : PADDLE_HEIGHT * 0.6), height: ai.height }
@@ -489,7 +506,7 @@ export class Renderer {
     }
 
     // Confettis
-    for (let i = 0; i < particles.count; i++) {
+    for (let i = 0; !this.settings.reducedMotion && i < particles.count; i++) {
       if (particles.kind[i] !== 2) continue
       const life = particles.life[i] / Math.max(particles.maxLife[i], 0.0001)
       const size = particles.size[i]
@@ -533,10 +550,16 @@ export class Renderer {
       this.core.push(bx + bw / 2, by + bh / 2, bw / 2, bh / 2, brick.color[0], brick.color[1], brick.color[2], 0.9, 4, Math.min(bw, bh) / 2, 0, 1.2)
     }
     const powerupColors: Record<string, [number, number, number]> = {
-      speed: [1, 0.85, 0.2],
-      slow: [0.3, 0.7, 1],
-      grow: [0.3, 1, 0.5],
-      shrink: [1, 0.35, 0.5],
+      speed: [1, 0.72, 0.12],
+      slow: [0.2, 0.72, 1],
+      grow: [0.28, 1, 0.48],
+      shrink: [1, 0.24, 0.38],
+      multiball: [0.72, 0.3, 1],
+      shield: [1, 0.92, 0.28],
+      teleport: [1, 0.28, 0.82],
+      magnet: [0.24, 0.42, 1],
+      ghost: [0.66, 0.9, 1],
+      double: [0.28, 1, 0.82],
     }
     for (const pu of world.powerups) {
       if (!pu.alive) continue
@@ -548,8 +571,9 @@ export class Renderer {
         py = FIELD_WIDTH - t
       }
       const col = powerupColors[pu.type] ?? [1, 1, 1]
-      this.pushGlow(px, py, 22, 22, col, 0.5)
-      this.core.push(px, py, 14, 14, col[0], col[1], col[2], 0.9, 1, 14, 0, 1.3)
+      this.pushGlow(px, py, 116, 116, col, 0.82)
+      this.core.push(px, py, 70, 70, col[0], col[1], col[2], 0.98, SPRITE_CIRCLE, 70, 0, 1.15)
+      this.drawPowerupSymbol(px, py, pu.type)
     }
 
     // La passe opaque doit être envoyée au GPU : sans cet envoi, ni les
@@ -584,6 +608,135 @@ export class Renderer {
       0,
       1.1,
     )
+  }
+
+  private drawPowerupSymbol(x: number, y: number, type: PowerupType): void {
+    const scale = 4
+    const ink: [number, number, number] = [0.07, 0.12, 0.16]
+    const symbolGlow = 0.45
+    const line = (x1: number, y1: number, x2: number, y2: number, thickness = 5): void => {
+      x1 *= scale
+      y1 *= scale
+      x2 *= scale
+      y2 *= scale
+      thickness *= scale
+      const dx = x2 - x1
+      const dy = y2 - y1
+      const length = Math.hypot(dx, dy)
+      this.core.push(
+        x + (x1 + x2) / 2,
+        y + (y1 + y2) / 2,
+        length / 2 + thickness * 0.3,
+        thickness / 2,
+        ink[0], ink[1], ink[2], 1,
+        SPRITE_ROUNDBOX,
+        thickness / 2,
+        Math.atan2(dy, dx),
+        symbolGlow,
+      )
+    }
+    const dot = (dx: number, dy: number, radius = 4): void => {
+      dx *= scale
+      dy *= scale
+      radius *= scale
+      this.core.push(x + dx, y + dy, radius, radius, ink[0], ink[1], ink[2], 1, SPRITE_CIRCLE, radius, 0, symbolGlow)
+    }
+
+    switch (type) {
+      case 'speed':
+        line(-2, -14, -10, 1, 6)
+        line(-10, 1, 0, -1, 6)
+        line(0, -1, -3, 14, 6)
+        break
+      case 'slow':
+        {
+          const clock: [number, number][] = [
+            [0, -13], [9, -9], [13, 0], [9, 9], [0, 13], [-9, 9], [-13, 0], [-9, -9], [0, -13],
+          ]
+          for (let i = 1; i < clock.length; i++) {
+            line(clock[i - 1][0], clock[i - 1][1], clock[i][0], clock[i][1], 4)
+          }
+          line(0, 0, 0, -8, 4)
+          line(0, 0, 6, 3, 4)
+        }
+        break
+      case 'grow':
+        line(0, 0, 0, -13, 5)
+        line(0, -13, -4, -8, 4)
+        line(0, -13, 4, -8, 4)
+        line(0, 0, 0, 13, 5)
+        line(0, 13, -4, 8, 4)
+        line(0, 13, 4, 8, 4)
+        line(0, 0, -13, 0, 5)
+        line(-13, 0, -8, -4, 4)
+        line(-13, 0, -8, 4, 4)
+        line(0, 0, 13, 0, 5)
+        line(13, 0, 8, -4, 4)
+        line(13, 0, 8, 4, 4)
+        break
+      case 'shrink':
+        line(-14, 0, -3, 0, 5)
+        line(-3, 0, -8, -5, 4)
+        line(-3, 0, -8, 5, 4)
+        line(14, 0, 3, 0, 5)
+        line(3, 0, 8, -5, 4)
+        line(3, 0, 8, 5, 4)
+        break
+      case 'multiball':
+        dot(-8, -6, 4)
+        dot(8, -6, 4)
+        dot(0, 8, 4)
+        break
+      case 'shield': {
+        const points: [number, number][] = [[0, -14], [11, -8], [9, 4], [0, 13], [-9, 4], [-11, -8], [0, -14]]
+        for (let i = 1; i < points.length; i++) {
+          line(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1], 4)
+        }
+        break
+      }
+      case 'teleport':
+        line(-12, -12, -12, 12, 5)
+        line(-12, -12, -7, -8, 4)
+        line(-12, 12, -7, 8, 4)
+        line(12, -12, 12, 12, 5)
+        line(12, -12, 7, -8, 4)
+        line(12, 12, 7, 8, 4)
+        line(-5, -4, 8, -4, 4)
+        line(8, -4, 3, -8, 4)
+        line(8, -4, 3, 0, 4)
+        line(5, 5, -8, 5, 4)
+        line(-8, 5, -3, 1, 4)
+        line(-8, 5, -3, 9, 4)
+        break
+      case 'magnet':
+        line(-10, -12, -10, 5, 5)
+        line(-10, 5, 10, 5, 5)
+        line(10, 5, 10, -12, 5)
+        line(-14, -12, -6, -12, 5)
+        line(6, -12, 14, -12, 5)
+        break
+      case 'ghost':
+        line(-11, 3, -11, -5, 4)
+        line(-11, -5, -6, -12, 4)
+        line(-6, -12, 6, -12, 4)
+        line(6, -12, 11, -5, 4)
+        line(11, -5, 11, 3, 4)
+        line(11, 3, 5, 8, 4)
+        line(5, 8, 0, 3, 4)
+        line(0, 3, -5, 8, 4)
+        line(-5, 8, -11, 3, 4)
+        dot(-5, -3, 2.5)
+        dot(5, -3, 2.5)
+        break
+      case 'double':
+        line(-8, -13, -8, 13, 7)
+        line(8, -13, 8, 13, 7)
+        line(-13, -13, -3, -13, 4)
+        line(3, -13, 13, -13, 4)
+        line(-13, 13, -3, 13, 4)
+        line(3, 13, 13, 13, 4)
+        break
+    }
   }
 
   private pushPaddle(

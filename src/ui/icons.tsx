@@ -40,6 +40,16 @@ export function IconMute({ className = base }: IconProps) {
   )
 }
 
+export function IconMusic({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className} aria-hidden="true">
+      <path d="M9 18V5l11-2v13" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+    </svg>
+  )
+}
+
 export function IconRestart({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className} aria-hidden="true">

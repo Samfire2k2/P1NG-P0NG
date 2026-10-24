@@ -5,7 +5,12 @@ Un jeu de Pong néon qui se joue dans le navigateur. Affronte l’IA, détruis u
 ## Fonctionnalités
 
 - **Contre l’IA** : quatre niveaux de difficulté, parties au score ou chronométrées.
-- **Casse-brique** : mode solo contre un mur de briques, jouable uniquement en portrait. Le joueur dispose de trois vies.
+- **Survie** : le match s’arrête à la première balle manquée ; l’IA accélère au fil des points et du temps.
+- **Défi local** : deux joueurs sur le même clavier, avec `W/S` et les flèches haut/bas.
+- **Entraînement** : exercices de 30 rebonds sur les murs ou 20 renvois précis au centre.
+- **Défi quotidien** : partie reproductible avec code partageable, contrat, record local et fantôme de la meilleure tentative.
+- **Progression** : série de défis, succès, thèmes cosmétiques à débloquer et rapport détaillé après chaque partie.
+- **Casse-brique** : mode solo sans IA. Envoie la balle vers un grand mur trapézoïdal, puis rattrape-la à son retour. Jouable uniquement en portrait, avec trois vies.
 - **En ligne** : crée un salon privé ou public, invite un adversaire avec un lien ou un code, et regarde une partie en spectateur.
 - **Personnalisation** : couleur des raquettes, bonus, thèmes, orientation et intensité de la lueur.
 - **Audio et interface** : effets sonores, musique, commandes de pause, plein écran et historique local des parties.
@@ -28,6 +33,8 @@ npm run dev
 Vite affiche l’adresse locale à ouvrir dans le navigateur (par défaut `http://localhost:5173`). Pour rendre le serveur de développement accessible sur le réseau local, Vite est configuré pour écouter sur toutes les interfaces.
 
 ## Commandes
+
+Depuis le terminal du jeu, `aide` liste les commandes disponibles. Essaie `defi`, `survie`, `duel local`, `entrainement rebonds` ou `entrainement precision`.
 
 | Action | Commande |
 | --- | --- |

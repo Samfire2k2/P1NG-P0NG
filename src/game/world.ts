@@ -24,6 +24,7 @@ import {
 import { clamp, createRng, randRange, TAU } from './math'
 import { ParticleSystem } from './particles'
 import { aiColorFrom, hsvToRgb, type Hsv, type Rgb } from './colors'
+import type { ArcadeModifier } from './arcade'
 
 export interface Brick {
   x: number
@@ -37,7 +38,11 @@ export interface Brick {
 export type Side = 'player' | 'ai'
 export type Phase = 'serve' | 'play' | 'point' | 'over'
 
-export type PowerupType = 'speed' | 'slow' | 'grow' | 'shrink' | 'multiball' | 'shield' | 'teleport' | 'magnet' | 'ghost' | 'double'
+export const POWERUP_TYPES = [
+  'speed', 'slow', 'grow', 'shrink', 'multiball',
+  'shield', 'teleport', 'magnet', 'ghost', 'double',
+] as const
+export type PowerupType = (typeof POWERUP_TYPES)[number]
 
 export interface Powerup {
   x: number
@@ -131,7 +136,7 @@ export class World {
         vx: 0,
         vy: 0,
         r: BALL_RADIUS,
-        speed: BALL_START_SPEED,
+        speed: this.baseBallSpeed(),
         owner: -1,
       })
     }
@@ -161,6 +166,8 @@ export class World {
    * pour casser toutes les briques ; il perd une vie si la balle passe.
    */
   brickMode = false
+  survivalMode = false
+  survivalLevel = 0
   mode: GameMode = 'ai'
   orientation: 'landscape' | 'portrait' = 'landscape'
   /** Mode casse-brique IA : l'ordinateur a ses propres briques. */
@@ -191,6 +198,9 @@ export class World {
   aiMagnet = 0
   /** Invisibilité (secondes restantes). */
   ghostTimer = 0
+  ghostPaddleY: number | null = null
+  ghostBall: { x: number; y: number } | null = null
+  challengeModifier: ArcadeModifier | null = null
   /** Double raquette. */
   playerDouble = false
   aiDouble = false
@@ -233,9 +243,9 @@ export class World {
   private rng: () => number = Math.random
 
   constructor() {
-    this.player = { x: PLAYER_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.playerColor }
-    this.ai = { x: FIELD_WIDTH - AI_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: PADDLE_HEIGHT, color: this.aiColor }
-    this.balls = [{ x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }]
+    this.player = { x: PLAYER_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: this.paddleHeight(), color: this.playerColor }
+    this.ai = { x: FIELD_WIDTH - AI_MARGIN, y: FIELD_HEIGHT / 2, vy: 0, height: this.paddleHeight(), color: this.aiColor }
+    this.balls = [{ x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: this.baseBallSpeed(), owner: -1 }]
     // Les particules suivent la même source d'aléatoire que le monde.
     this.particles.rng = this.rng
   }
@@ -244,6 +254,18 @@ export class World {
     this.rng = createRng(seed >>> 0)
     // Les particules partagent la graine : la simulation reste reproductible.
     this.particles.rng = this.rng
+  }
+
+  setChallengeModifier(modifier: ArcadeModifier | null): void {
+    this.challengeModifier = modifier
+  }
+
+  private baseBallSpeed(): number {
+    return BALL_START_SPEED * (this.challengeModifier === 'fast-ball' ? 1.24 : 1)
+  }
+
+  private paddleHeight(): number {
+    return PADDLE_HEIGHT * (this.challengeModifier === 'compact-paddles' ? 0.72 : 1)
   }
 
   setPlayerColor(hsv: Hsv): void {
@@ -270,6 +292,7 @@ export class World {
     this.time = 0
     this.scorePlayer = 0
     this.scoreAi = 0
+    this.survivalLevel = 0
     this.target = target
     this.timeLeft = this.format === 'time' ? this.roundDuration : -1
     this.draw = false
@@ -297,8 +320,8 @@ export class World {
     this.player.vy = 0
     this.ai.y = FIELD_HEIGHT / 2
     this.ai.vy = 0
-    this.player.height = PADDLE_HEIGHT * this.playerHeightMul
-    this.ai.height = PADDLE_HEIGHT * this.aiHeightMul
+    this.player.height = this.paddleHeight() * this.playerHeightMul
+    this.ai.height = this.paddleHeight() * this.aiHeightMul
     this.playerTargetY = FIELD_HEIGHT / 2
     this.aiState.targetY = FIELD_HEIGHT / 2
     this.aiState.reactionTimer = 0
@@ -313,11 +336,19 @@ export class World {
     this.countdownStep = 0
     // Le « 2 » reste affiché un temps avant de passer à « 1 ».
     this.serveTimer = COUNTDOWN_STEP
-    this.serveTo = this.rng() < 0.5 ? 'player' : 'ai'
+    this.serveTo = this.brickMode ? 'player' : this.rng() < 0.5 ? 'player' : 'ai'
   }
 
   private parkBall(): void {
-    this.balls = [{ x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2, vx: 0, vy: 0, r: BALL_RADIUS, speed: BALL_START_SPEED, owner: -1 }]
+    this.balls = [{
+      x: this.brickMode ? this.player.x + PADDLE_WIDTH + BALL_RADIUS + 2 : FIELD_WIDTH / 2,
+      y: FIELD_HEIGHT / 2,
+      vx: 0,
+      vy: 0,
+      r: BALL_RADIUS,
+      speed: this.baseBallSpeed(),
+      owner: this.brickMode ? 0 : -1,
+    }]
   }
 
   private push(ev: GameEvent): void {
@@ -343,8 +374,10 @@ export class World {
     this.gridPulse = Math.max(0, this.gridPulse - dt * 0.85)
 
     if (!this.playerRemote) this.updatePlayer(dt)
-    if (this.aiRemote) this.updateNetPaddle(dt)
-    else this.updateAi(dt)
+    if (!this.brickMode) {
+      if (this.aiRemote) this.updateNetPaddle(dt)
+      else this.updateAi(dt)
+    }
     if (this.frozen) {
       this.particles.update(dt)
       return
@@ -450,11 +483,23 @@ export class World {
   }
 
   private launchServe(): void {
+    if (this.brickMode) {
+      const angle = randRange(-0.18, 0.18, this.rng)
+      this.ball.x = this.player.x + PADDLE_WIDTH + this.ball.r + 2
+      this.ball.y = this.player.y
+      this.ball.speed = this.baseBallSpeed()
+      this.ball.vx = Math.cos(angle) * this.ball.speed
+      this.ball.vy = Math.sin(angle) * this.ball.speed
+      this.ball.owner = 0
+      this.phase = 'play'
+      this.push({ type: 'serve' })
+      return
+    }
     const dir = this.serveTo === 'player' ? -1 : 1
     const angle = randRange(-0.36, 0.36, this.rng)
     this.ball.x = FIELD_WIDTH / 2
     this.ball.y = FIELD_HEIGHT / 2
-    this.ball.speed = BALL_START_SPEED
+    this.ball.speed = this.baseBallSpeed()
     this.ball.vx = Math.cos(angle) * this.ball.speed * dir
     this.ball.vy = Math.sin(angle) * this.ball.speed
     this.phase = 'play'
@@ -466,6 +511,9 @@ export class World {
     for (let i = 0; i < this.balls.length; i++) {
       if (this.phase !== 'play') break
       const b = this.balls[i]
+      const previousX = b.x
+      const previousY = b.y
+      if (this.challengeModifier === 'orbital-ball') b.vy += Math.sin(this.time * 2.1 + b.x * 0.003) * 26 * dt
       b.x += b.vx * dt
       b.y += b.vy * dt
 
@@ -483,13 +531,13 @@ export class World {
       // Paddles
       if (b.vx < 0) {
         const front = this.player.x + PADDLE_WIDTH / 2
-        if (b.x - b.r <= front && b.x > this.player.x - PADDLE_WIDTH) {
-          if (this.paddleOverlap(this.player, b)) this.onPaddleHit(this.player, b, 1)
+        if (b.x - b.r <= front && (previousX >= this.player.x || b.x >= this.player.x - PADDLE_WIDTH)) {
+          if (this.paddleContact(this.player, b, 1, previousX, previousY)) this.onPaddleHit(this.player, b, 1)
         }
-      } else if (b.vx > 0) {
+      } else if (b.vx > 0 && !this.brickMode) {
         const front = this.ai.x - PADDLE_WIDTH / 2
-        if (b.x + b.r >= front && b.x < this.ai.x + PADDLE_WIDTH) {
-          if (this.paddleOverlap(this.ai, b)) this.onPaddleHit(this.ai, b, -1)
+        if (b.x + b.r >= front && (previousX <= this.ai.x || b.x <= this.ai.x + PADDLE_WIDTH)) {
+          if (this.paddleContact(this.ai, b, -1, previousX, previousY)) this.onPaddleHit(this.ai, b, -1)
         }
       }
 
@@ -523,7 +571,6 @@ export class World {
             // Mode casse-brique : pas d'adversaire, le score compte les
             // briques cassées. Victoire quand il n'en reste plus.
             if (this.brickMode) {
-              this.bricksBroken++
               if (this.bricksLeft <= 0) {
                 this.phase = 'over'
                 this.draw = false
@@ -588,10 +635,14 @@ export class World {
       }
 
       // But
-      if (b.x + b.r < 0) {
+      if (this.brickMode && b.x + b.r >= FIELD_WIDTH) {
+        b.x = FIELD_WIDTH - b.r
+        b.vx = -Math.abs(b.vx)
+        this.onWallHit(FIELD_WIDTH, b.y, b)
+      } else if (b.x + b.r < 0) {
         toRemove.push(i)
         this.onGoal('ai')
-      } else if (b.x - b.r > FIELD_WIDTH) {
+      } else if (!this.brickMode && b.x - b.r > FIELD_WIDTH) {
         toRemove.push(i)
         this.onGoal('player')
       }
@@ -607,15 +658,35 @@ export class World {
     }
   }
 
-  private paddleOverlap(p: Paddle, b: Ball): boolean {
+  private paddleContact(p: Paddle, b: Ball, dir: number, previousX: number, previousY: number): boolean {
+    const contactX = p.x + dir * (PADDLE_WIDTH / 2 + b.r)
+    const crossedFront = dir > 0
+      ? previousX >= contactX && b.x <= contactX
+      : previousX <= contactX && b.x >= contactX
+
+    if (crossedFront) {
+      const travelX = b.x - previousX
+      const contactTime = travelX === 0 ? 0 : clamp((contactX - previousX) / travelX, 0, 1)
+      const contactY = previousY + (b.y - previousY) * contactTime
+      // Slightly forgiving vertical margin covers fast paddle and ball movement.
+      if (Math.abs(contactY - p.y) > p.height / 2 + b.r + 7) return false
+      b.x = contactX
+      b.y = contactY
+      return true
+    }
+
+    return this.paddleOverlap(p, b, 7)
+  }
+
+  private paddleOverlap(p: Paddle, b: Ball, margin = 0): boolean {
     const halfH = p.height / 2
     const halfW = PADDLE_WIDTH / 2
     const dx = b.x - p.x
     const dy = b.y - p.y
-    if (Math.abs(dy) > halfH + b.r) return false
+    if (Math.abs(dy) > halfH + b.r + margin) return false
     // Rectangle arrondi (coin = rayon de la balle)
     const cx = Math.abs(dx) - (halfW - b.r)
-    const cy = Math.abs(dy) - (halfH - b.r)
+    const cy = Math.abs(dy) - (halfH + margin - b.r)
     if (cx <= 0 && cy <= 0) return true
     return Math.hypot(Math.max(cx, 0), Math.max(cy, 0)) <= b.r
   }
@@ -686,11 +757,10 @@ export class World {
         this.spawnTimer = 6 + this.rng() * 4
         const alive = this.powerups.filter((p) => p.alive)
         if (alive.length < 3) {
-          const types: PowerupType[] = ['speed', 'slow', 'grow', 'shrink', 'multiball', 'shield', 'teleport', 'magnet', 'ghost', 'double']
           this.powerups.push({
             x: 260 + this.rng() * (FIELD_WIDTH - 520),
             y: 140 + this.rng() * (FIELD_HEIGHT - 280),
-            type: types[Math.floor(this.rng() * types.length)],
+            type: POWERUP_TYPES[Math.floor(this.rng() * POWERUP_TYPES.length)],
             ttl: 9,
             alive: true,
           })
@@ -708,7 +778,7 @@ export class World {
     const b = this.ball
     for (const p of this.powerups) {
       if (!p.alive) continue
-      if (Math.hypot(b.x - p.x, b.y - p.y) <= b.r + 16) {
+      if (Math.hypot(b.x - p.x, b.y - p.y) <= b.r + 68) {
         p.alive = false
         this.collectPowerup(p, b.owner)
       }
@@ -731,7 +801,8 @@ export class World {
         else this.aiHeightMul = Math.min(1.6, this.aiHeightMul * 1.4)
         break
       case 'shrink':
-        if (owner === 0) this.aiHeightMul = Math.max(0.6, this.aiHeightMul * 0.7)
+        if (this.brickMode && owner === 0) this.playerHeightMul = Math.max(0.6, this.playerHeightMul * 0.7)
+        else if (owner === 0) this.aiHeightMul = Math.max(0.6, this.aiHeightMul * 0.7)
         else this.playerHeightMul = Math.max(0.6, this.playerHeightMul * 0.7)
         break
       case 'multiball':
@@ -762,7 +833,8 @@ export class World {
         break
       case 'magnet':
         // La balle est attirée vers le centre de la raquette adverse.
-        if (owner === 0) this.aiMagnet = 1.5
+        if (this.brickMode && owner === 0) this.playerMagnet = 1.5
+        else if (owner === 0) this.aiMagnet = 1.5
         else this.playerMagnet = 1.5
         break
       case 'ghost':
@@ -775,34 +847,42 @@ export class World {
         else this.aiDouble = true
         break
     }
-    this.player.height = PADDLE_HEIGHT * this.playerHeightMul
-    this.ai.height = PADDLE_HEIGHT * this.aiHeightMul
-    this.push({ type: 'powerup', side, x: p.x, y: p.y, value: ['speed','slow','grow','shrink','multiball','shield','teleport','magnet','ghost','double'].indexOf(p.type) })
+    this.player.height = this.paddleHeight() * this.playerHeightMul
+    this.ai.height = this.paddleHeight() * this.aiHeightMul
+    this.push({ type: 'powerup', side, x: p.x, y: p.y, value: POWERUP_TYPES.indexOf(p.type) })
   }
 
   buildBricks(): void {
-    const cols = 10
-    const rows = 8
-    const bw = 36
-    const bh = 20
-    const gap = 6
-    const totalW = cols * bw + (cols - 1) * gap
-    const startX = (FIELD_WIDTH - totalW) / 2
-    const startY = (FIELD_HEIGHT - (rows * bh + (rows - 1) * gap)) / 2
+    // Le terrain est pivoté en portrait : world.x devient l'axe vertical.
+    // Le nombre de colonnes augmente vers le joueur pour former un trapèze.
+    const rows = 10
+    const firstColumns = 6
+    const columnStep = 1
+    const brickDepth = 46
+    const depthGap = 8
+    const brickWidth = 42
+    const widthGap = 7
+    const topOffset = 115
     const colors: Rgb[] = [
       [1, 0.3, 0.5],
       [1, 0.6, 0.2],
       [1, 0.85, 0.2],
       [0.3, 0.9, 0.5],
+      [0.2, 0.75, 1],
     ]
     this.bricks = []
     for (let r = 0; r < rows; r++) {
+      const cols = firstColumns + r * columnStep
+      const totalW = cols * brickWidth + (cols - 1) * widthGap
+      const startY = (FIELD_HEIGHT - totalW) / 2
+      const screenY = topOffset + r * (brickDepth + depthGap)
+      const worldX = FIELD_WIDTH - screenY - brickDepth
       for (let c = 0; c < cols; c++) {
         this.bricks.push({
-          x: startX + c * (bw + gap),
-          y: startY + r * (bh + gap),
-          w: bw,
-          h: bh,
+          x: worldX,
+          y: startY + c * (brickWidth + widthGap),
+          w: brickDepth,
+          h: brickWidth,
           alive: true,
           color: colors[r % colors.length],
         })
@@ -873,6 +953,13 @@ export class World {
 
     // Mode casse-brique classique : le but enlève une vie ; s'il en reste, on relance.
     if (this.brickMode) {
+      if (this.playerShield) {
+        this.playerShield = false
+        this.phase = 'point'
+        this.serveTimer = POINT_PAUSE * 0.6
+        this.push({ type: 'score', side: 'player', value: this.brickLives })
+        return
+      }
       this.brickLives--
       if (this.brickLives <= 0) {
         this.phase = 'over'
@@ -911,6 +998,15 @@ export class World {
     if (scorer === 'player') this.scorePlayer++
     else this.scoreAi++
 
+    if (this.survivalMode && scorer === 'ai') {
+      this.phase = 'over'
+      this.draw = false
+      this.winner = 'ai'
+      this.push({ type: 'lose', side: 'ai' })
+      return
+    }
+    if (this.survivalMode && scorer === 'player') this.survivalLevel++
+
     this.lastScorer = scorer
     this.phase = 'point'
     this.serveTimer = POINT_PAUSE
@@ -922,8 +1018,8 @@ export class World {
     this.playerHeightMul = 1
     this.aiHeightMul = 1
     this.ballSpeedMul = 1
-    this.player.height = PADDLE_HEIGHT
-    this.ai.height = PADDLE_HEIGHT
+    this.player.height = this.paddleHeight()
+    this.ai.height = this.paddleHeight()
 
     const color = scorer === 'player' ? this.playerColor : this.aiColor
     const x = scorer === 'player' ? FIELD_WIDTH + 20 : -20
@@ -939,7 +1035,7 @@ export class World {
 
     // En mode « points » la manche s'arrête dès que la cible est atteinte ;
     // en mode « temps » seul le chronomètre décide.
-    if (this.format === 'points' && (this.scorePlayer >= this.target || this.scoreAi >= this.target)) {
+    if (!this.survivalMode && this.format === 'points' && (this.scorePlayer >= this.target || this.scoreAi >= this.target)) {
       this.phase = 'over'
       this.draw = false
       this.winner = this.scorePlayer > this.scoreAi ? 'player' : 'ai'
@@ -1002,7 +1098,8 @@ export class World {
 
     const half = paddle.height / 2
     const desired = clamp(state.targetY, half, FIELD_HEIGHT - half)
-    const maxSpeed = AI_BASE_MAX_SPEED * profile.speed
+    const survivalRamp = this.survivalMode ? 1 + this.survivalLevel * 0.08 + Math.floor(this.time / 20) * 0.025 : 1
+    const maxSpeed = AI_BASE_MAX_SPEED * profile.speed * survivalRamp
     const dy = desired - paddle.y
     const maxStep = maxSpeed * dt
     const move = clamp(dy, -maxStep, maxStep)

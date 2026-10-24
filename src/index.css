@@ -2,7 +2,8 @@
 
 :root {
   color-scheme: dark;
-  --accent: #35e0ff;
+  --accent: #c7edff;
+  --terminal-phosphor: #c7edff;
   --accent-ai: #ff4fb0;
 }
 
@@ -20,7 +21,7 @@ body {
   margin: 0;
   background: #05060a;
   color: #e9edf7;
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   overflow: hidden;
   overscroll-behavior: none;
   user-select: none;
@@ -35,14 +36,31 @@ canvas {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+h1,
+h2,
+h3,
+.ping-title,
+.primary-button {
+  font-family: 'Orbitron', 'JetBrains Mono', monospace;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
 /* Effets néon ------------------------------------------------------- */
 
 .ping-title {
-  color: #fff;
-  text-shadow:
-    0 0 6px var(--accent),
-    0 0 22px color-mix(in srgb, var(--accent) 70%, transparent),
-    0 0 60px color-mix(in srgb, var(--accent) 40%, transparent);
+  color: #f4f8ff;
+  font-family: 'Audiowide', 'Orbitron', 'JetBrains Mono', monospace;
+  text-shadow: 0 0 8px rgba(232, 244, 255, 0.2);
+}
+
+.brand-dark-digit {
+  color: #4b9dff;
+  text-shadow: 0 0 8px rgba(50, 139, 255, 0.9), 0 0 20px rgba(22, 113, 255, 0.68);
 }
 
 .ping-text {
@@ -55,9 +73,9 @@ canvas {
   border: 0;
   cursor: pointer;
   font-family: 'Orbitron', 'JetBrains Mono', monospace;
-  font-size: clamp(2rem, 7vw, 4rem);
+  font-size: clamp(1.25rem, 4vw, 2.1rem);
   font-weight: 800;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.16em;
   text-shadow:
     0 0 8px var(--accent),
     0 0 26px color-mix(in srgb, var(--accent) 85%, transparent),
@@ -104,13 +122,10 @@ canvas {
 }
 
 .glass-panel {
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--accent) 9%, rgba(8, 10, 18, 0.78)),
-    rgba(6, 8, 14, 0.86)
-  );
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, rgba(255, 255, 255, 0.07));
-  backdrop-filter: blur(18px) saturate(1.2);
+  background: linear-gradient(160deg, rgba(5, 14, 18, 0.96), rgba(4, 8, 12, 0.96));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, rgba(255, 255, 255, 0.06));
+  box-shadow: inset 0 0 24px -18px color-mix(in srgb, var(--accent) 45%, transparent);
+  backdrop-filter: blur(12px);
 }
 
 .glass-button {
@@ -124,9 +139,9 @@ canvas {
 }
 
 .glass-button:hover {
-  background: color-mix(in srgb, var(--accent) 14%, rgba(255, 255, 255, 0.05));
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  box-shadow: 0 0 18px -4px color-mix(in srgb, var(--accent) 80%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, rgba(4, 14, 18, 0.8));
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  box-shadow: 0 0 12px -6px color-mix(in srgb, var(--accent) 80%, transparent);
 }
 
 .glass-button:active {
@@ -135,7 +150,7 @@ canvas {
 
 .primary-button {
   color: #05060a;
-  font-family: 'Orbitron', 'Outfit', system-ui, sans-serif;
+  font-family: 'Orbitron', 'JetBrains Mono', monospace;
   background: linear-gradient(
     120deg,
     var(--accent),
@@ -259,4 +274,370 @@ canvas {
 
 .animate-rise {
   animation: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Habillage terminal d'arcade */
+.arcade-shell {
+  isolation: isolate;
+  background: #03070b;
+}
+
+.arcade-shell::before,
+.arcade-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.arcade-shell::before {
+  opacity: 0.14;
+  background-image:
+    linear-gradient(rgba(199, 237, 255, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(199, 237, 255, 0.11) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+.arcade-shell::after {
+  z-index: 2;
+  opacity: 0.055;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 3px,
+    rgba(0, 0, 0, 0.32) 4px
+  );
+}
+
+.terminal-backdrop {
+  background: rgba(1, 5, 3, 0.88);
+}
+
+.terminal-panel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(199, 237, 255, 0.24);
+  border-radius: 2px !important;
+  background: rgba(3, 8, 16, 0.98);
+  box-shadow:
+    0 18px 70px rgba(0, 0, 0, 0.56),
+    0 0 28px -20px rgba(199, 237, 255, 0.48);
+}
+
+.startup-splash {
+  background: #020810;
+  backdrop-filter: none;
+}
+
+.terminal-startup .terminal-panel {
+  border-color: rgba(199, 237, 255, 0.3);
+  box-shadow:
+    0 22px 80px rgba(0, 0, 0, 0.52),
+    0 0 32px -20px rgba(199, 237, 255, 0.62),
+    inset 0 0 24px -22px rgba(199, 237, 255, 0.6);
+}
+
+.terminal-help {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  tab-size: 2;
+}
+
+.terminal-input {
+  caret-color: #c7edff;
+}
+
+.terminal-startup .terminal-input:focus {
+  text-shadow: 0 0 9px rgba(199, 237, 255, 0.22);
+}
+
+.terminal-startup .terminal-start-form:focus-within {
+  box-shadow: 0 0 18px -14px rgba(199, 237, 255, 0.65);
+}
+
+.terminal-start-form:focus-within {
+  border-top-color: rgba(199, 237, 255, 0.55);
+}
+
+/* Le terminal sert aussi de console de configuration et de panneau de jeu. */
+.terminal-panel .glass-button,
+.terminal-mode-tab {
+  border: 1px solid transparent;
+  border-bottom-color: rgba(199, 237, 255, 0.2);
+  border-radius: 0 !important;
+  background: transparent;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  box-shadow: none;
+}
+
+.terminal-panel .glass-button:hover,
+.terminal-mode-tab:hover {
+  border-bottom-color: #c7edff;
+  background: rgba(82, 157, 203, 0.08);
+  box-shadow: none;
+}
+
+.terminal-panel .primary-button {
+  border: 0;
+  border-radius: 0 !important;
+  background: transparent;
+  box-shadow: none;
+  color: #c7edff;
+  text-shadow: 0 0 10px rgba(199, 237, 255, 0.3);
+}
+
+.terminal-panel .primary-button:hover {
+  transform: none;
+  background: transparent;
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  box-shadow: none;
+}
+
+.terminal-panel > div:has(.terminal-mode-tab),
+.terminal-panel form:has(#match-command) > div.mt-2 {
+  display: none;
+}
+
+.terminal-panel input:not([type='range']),
+.terminal-panel select {
+  border-radius: 2px !important;
+  border-color: rgba(166, 220, 255, 0.32) !important;
+  background-color: #020a05 !important;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.game-terminal-frame {
+  z-index: -1;
+  border: 1px solid rgba(79, 220, 123, 0.12);
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(180, 231, 255, 0.38), rgba(180, 231, 255, 0.38)) left top / 22px 1px no-repeat,
+    linear-gradient(rgba(180, 231, 255, 0.38), rgba(180, 231, 255, 0.38)) left top / 1px 22px no-repeat,
+    linear-gradient(rgba(180, 231, 255, 0.38), rgba(180, 231, 255, 0.38)) right bottom / 22px 1px no-repeat,
+    linear-gradient(rgba(180, 231, 255, 0.38), rgba(180, 231, 255, 0.38)) right bottom / 1px 22px no-repeat;
+}
+
+.terminal-readout {
+  border: 0;
+  border-bottom: 1px solid rgba(199, 237, 255, 0.24);
+  border-radius: 2px;
+  background: rgba(2, 9, 5, 0.28);
+  box-shadow: none;
+}
+
+.game-terminal-button {
+  border-radius: 2px !important;
+  border-color: rgba(166, 220, 255, 0.25);
+  background: rgba(2, 12, 7, 0.55);
+  color: #9de8b3;
+}
+
+.game-terminal-button:hover {
+  border-color: rgba(199, 237, 255, 0.65);
+  color: #eaffef;
+}
+
+.terminal-panel::before,
+.terminal-panel::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 76px;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 70%, transparent);
+  pointer-events: none;
+}
+
+.terminal-panel::before {
+  top: 0;
+  left: 1.5rem;
+}
+
+.terminal-panel::after {
+  right: 1.5rem;
+  bottom: 0;
+  opacity: 0.55;
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding-bottom: 0.8rem;
+  color: #71808c;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.terminal-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--accent);
+}
+
+.terminal-status::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 9px currentColor;
+  content: '';
+}
+
+.terminal-panel .rounded-2xl,
+.terminal-panel .rounded-xl {
+  border-radius: 2px !important;
+}
+
+.game-terminal-hud [style] {
+  text-shadow: none !important;
+}
+
+.terminal-panel .bg-white\/\[0\.02\],
+.terminal-panel .bg-black\/20,
+.terminal-panel .bg-black\/25,
+.terminal-panel .bg-black\/40 {
+  background-color: rgba(199, 237, 255, 0.025);
+}
+
+.terminal-startup .terminal-help { color: rgba(226, 244, 255, 0.78); }
+.terminal-startup .terminal-start-form > label { color: rgba(199, 237, 255, 0.62); }
+.terminal-startup .terminal-start-form > div > span { color: var(--terminal-phosphor); }
+.terminal-startup .terminal-input { color: #f0f9ff; }
+.terminal-startup .terminal-input::placeholder { color: rgba(219, 240, 255, 0.28); }
+.terminal-startup .terminal-feedback { color: rgba(199, 237, 255, 0.82); }
+.terminal-mode-line { color: rgba(199, 237, 255, 0.72); }
+.terminal-status { color: var(--terminal-phosphor); }
+
+@media (prefers-reduced-motion: reduce) {
+  .arcade-shell::after {
+    display: none;
+  }
+}
+
+.touch-controls {
+  display: none;
+}
+
+.touch-control-button {
+  display: grid;
+  width: 3.75rem;
+  height: 3.75rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  border-radius: 2px;
+  background: rgba(4, 12, 18, 0.82);
+  color: var(--accent);
+  font-size: 1.35rem;
+  box-shadow: none;
+  touch-action: none;
+  user-select: none;
+}
+
+.touch-control-button:active {
+  background: color-mix(in srgb, var(--accent) 12%, #05070b);
+  box-shadow: none;
+}
+
+.active-powerup-list {
+  z-index: 2;
+}
+
+.active-powerup-chip {
+  border-left: 1px solid rgba(199, 237, 255, 0.52);
+  background: rgba(2, 8, 15, 0.78);
+  color: #e7f6ff;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 8px rgba(199, 237, 255, 0.18);
+}
+
+.active-powerup-indicator {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #c7edff;
+  box-shadow: 0 0 8px rgba(199, 237, 255, 0.7);
+}
+
+.portrait-hud .touch-controls {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: max(0.35rem, env(safe-area-inset-left));
+  flex-direction: column;
+  gap: 0.45rem;
+  transform: none;
+  translate: 0 -50%;
+}
+
+.portrait-hud .touch-control-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.1rem;
+}
+
+.portrait-hud .game-control-bar {
+  top: 50%;
+  right: max(0.35rem, env(safe-area-inset-right));
+  bottom: auto;
+  flex-direction: column;
+  gap: 0.35rem;
+  transform: translateY(-50%);
+}
+
+.portrait-hud .portrait-control-stack {
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.portrait-hud .active-powerup-list {
+  top: 20%;
+  left: max(0.4rem, env(safe-area-inset-left));
+}
+
+@media (pointer: coarse) {
+  .touch-controls {
+    display: flex;
+  }
+
+  .control-hint {
+    display: none;
+  }
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+.high-contrast .text-zinc-400,
+.high-contrast .text-zinc-500 {
+  color: #e2e8f0 !important;
+}
+
+.high-contrast .text-zinc-600,
+.high-contrast .text-zinc-700 {
+  color: #cbd5e1 !important;
+}
+
+.high-contrast [class*="border-white/"] {
+  border-color: rgba(226, 232, 240, 0.35) !important;
 }

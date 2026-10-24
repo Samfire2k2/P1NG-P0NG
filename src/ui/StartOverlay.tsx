@@ -1,11 +1,34 @@
+import { useState, type FormEvent, type KeyboardEvent } from 'react'
 import { DIFFICULTY_PROFILES, DIFFICULTIES, type Difficulty, type MatchFormat } from '../game/constants'
+import { POWERUP_INFO } from '../game/powerups'
+import { POWERUP_TYPES } from '../game/world'
 import type { EngineState } from '../game/engine'
 import type { NetStatus } from '../net/session'
 import ColorPicker from './ColorPicker'
 import { IconPalette } from './icons'
 import OnlineLobby from './OnlineLobby'
+import { CONTRACT_INFO, getDailyChallenge, MODIFIER_INFO, parseChallengeCode, type DailyChallenge } from '../game/arcade'
 
 export type GameModeTab = 'ai' | 'online' | 'brick'
+
+const POWERUP_COLOR: Record<(typeof POWERUP_TYPES)[number], string> = {
+  speed: '#ffb71b', slow: '#33baff', grow: '#47e875', shrink: '#ff526d',
+  multiball: '#bd70ff', shield: '#ffe44a', teleport: '#ff55c8', magnet: '#526fff',
+  ghost: '#a8e8ff', double: '#45edca',
+}
+
+const ACHIEVEMENT_LABELS: Record<string, string> = {
+  'first-win': 'Première victoire', 'rally-ace': 'Maître des échanges', collector: 'Collectionneur',
+  survivor: 'Dernier survivant', 'brick-breaker': 'Démolisseur', contract: 'Contrat rempli',
+  'streak-3': 'Série de 3 défis', veteran: 'Vétéran',
+}
+
+const TERMINAL_COMMANDS = [
+  'aide', 'help', '?', 'solo', 'solo facile', 'solo moyen', 'solo difficile', 'solo expert',
+  'solo facile 7 pts', 'solo moyen 11 pts', 'solo expert 3 min', 'solo expert 3 min bonus',
+  'solo facile 7 pts sans bonus', 'duel', 'en ligne', 'online', 'casse-brique', 'brick',
+  'lancer', 'start', 'jouer', 'bonus', 'sans bonus', 'defi', 'entrainement', 'entrainement rebonds', 'entrainement precision', 'survie', 'duel local',
+]
 
 interface StartOverlayProps {
   state: EngineState
@@ -36,11 +59,29 @@ interface StartOverlayProps {
   initialKey: string
   playerName: string
   peerName: string
-  history: { date: string; mode: string; format: string; scorePlayer: number; scoreAi: number; difficulty: string; target: number }[]
+  history: { date: string; mode: string; brickMode?: boolean; format: string; scorePlayer: number; scoreAi: number; result?: 'win' | 'loss' | 'draw'; difficulty: string; target: number; challengeCode?: string; contractComplete?: boolean }[]
   leaderboard: { name: string; score: number; date: string }[]
   canStart: boolean
   onNameChange: (name: string) => void
   onStartMatch: () => void
+  musicMuted: boolean
+  onToggleMusic: () => void
+  onToggleEffects: () => void
+  sensitivity: number
+  onSensitivity: (value: number) => void
+  reduceMotion: boolean
+  onReduceMotion: (value: boolean) => void
+  highContrast: boolean
+  onHighContrast: (value: boolean) => void
+  onTutorial: () => void
+  onDailyChallenge: (challenge: DailyChallenge | null) => void
+  challengeRecord?: { best: number; contract: boolean; hasReplay: boolean }
+  achievements: string[]
+  dailyStreak: number
+  unlockedThemes: number[]
+  onSurvival: (enabled: boolean) => void
+  onLocalDuel: (enabled: boolean) => void
+  onTrainingExercise: (exercise: 'rebonds' | 'precision' | null) => void
 }
 
 export default function StartOverlay({
@@ -77,12 +118,278 @@ export default function StartOverlay({
   canStart,
   onNameChange,
   onStartMatch,
+  musicMuted,
+  onToggleMusic,
+  onToggleEffects,
+  sensitivity,
+  onSensitivity,
+  reduceMotion,
+  onReduceMotion,
+  highContrast,
+  onHighContrast,
+  onTutorial,
+  onDailyChallenge,
+  challengeRecord,
+  achievements,
+  dailyStreak,
+  unlockedThemes,
+  onSurvival,
+  onLocalDuel,
+  onTrainingExercise,
 }: StartOverlayProps) {
   const netStatus: NetStatus = state.netStatus
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'ai' | 'online' | 'brick'>('all')
+  const [command, setCommand] = useState('')
+  const [commandFeedback, setCommandFeedback] = useState('')
+  const [terminalEntered, setTerminalEntered] = useState(false)
+  const [completion, setCompletion] = useState<{ prefix: string; candidates: string[]; index: number } | null>(null)
+  const commandHelp = [
+    'aide ........................ affiche cette aide',
+    'solo [niveau] [format] [bonus] configure Pong contre l’IA',
+    '  niveaux : facile | moyen | difficile | expert',
+    '  format  : 7 pts (1–99) | 3 min (1–60)',
+    '  bonus   : bonus | sans bonus',
+    'duel / en ligne ............. ouvre le salon multijoueur',
+    'casse-brique ................ lance le mode solo portrait',
+    'defi [P1-AAAAMMJJ] ........... lance le défi du jour ou un défi partagé',
+    'entrainement ................. partie libre contre une IA facile',
+    'entrainement rebonds ......... exercice de 30 rebonds sur les murs',
+    'entrainement precision ....... exercice de 20 renvois centraux',
+    'survie ....................... tiens le plus longtemps face a une IA qui accelere',
+    'duel local ................... deux joueurs : W/S et fleches haut/bas',
+    'lancer ...................... démarre la partie configurée',
+    '',
+    'Exemples : solo facile 7 pts bonus · solo expert 3 min · duel · casse-brique',
+  ].join('\n')
+  const filteredHistory = history.filter((entry) => historyFilter === 'all'
+    || (historyFilter === 'brick' ? entry.brickMode : !entry.brickMode && entry.mode === historyFilter))
+  const wins = filteredHistory.filter((entry) => entry.result === 'win').length
+  const losses = filteredHistory.filter((entry) => entry.result === 'loss').length
+  const draws = filteredHistory.filter((entry) => entry.result === 'draw').length
+  const bestScore = filteredHistory.reduce((best, entry) => Math.max(best, entry.scorePlayer), 0)
+
+  const applyCommand = (rawCommand: string) => {
+    const value = rawCommand.trim().toLocaleLowerCase('fr-FR').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    if (!value) {
+      setCommandFeedback('Saisis une configuration ou choisis un raccourci.')
+      return
+    }
+
+    if (/^(aide|help|\?)$/.test(value)) {
+      setCommandFeedback(commandHelp)
+      setCommand('')
+      return
+    }
+    if (/^defi(?:\s+(p1-\d{8}))?$/.test(value)) {
+      const code = value.match(/p1-\d{8}/i)?.[0]
+      const challenge = code ? parseChallengeCode(code) : getDailyChallenge()
+      if (!challenge) {
+        setCommandFeedback('Code de défi invalide. Format attendu : P1-AAAAMMJJ')
+        return
+      }
+      onDailyChallenge(challenge)
+      onStart()
+      setTab('ai')
+      setTerminalEntered(true)
+      setCommandFeedback(`DÉFI ${challenge.code} // ${challenge.difficulty.toUpperCase()} · ${challenge.target} POINTS · ${MODIFIER_INFO[challenge.modifier].label} · CONTRAT : ${CONTRACT_INFO[challenge.contract].label}`)
+      setCommand('')
+      return
+    }
+    if (/^survie$/.test(value)) {
+      onDailyChallenge(null)
+      onSurvival(true)
+      setTab('ai')
+      setTerminalEntered(true)
+      onStart()
+      return
+    }
+    if (/^(?:duel\s+)?local(?:\s+a\s+deux)?$/.test(value)) {
+      onDailyChallenge(null)
+      onLocalDuel(true)
+      setTab('ai')
+      setTerminalEntered(true)
+      setCommandFeedback('DUEL LOCAL // JOUEUR 1 : W/S · JOUEUR 2 : ↑/↓')
+      onStart()
+      return
+    }
+    if (/^(lancer|start|jouer)$/.test(value)) {
+      if (tab === 'online') {
+        if (canStart) onStartMatch()
+        else setCommandFeedback('Salon en attente // connecte un adversaire avant de lancer.')
+      } else {
+        onStart()
+      }
+      return
+    }
+
+    let nextTab = tab
+    const trainingMatch = value.match(/^entrainement(?:\s+(rebonds|precision|facile))?$/)
+    if (trainingMatch) {
+      onDailyChallenge(null)
+      onTabChange('ai')
+      const exercise = trainingMatch[1] === 'rebonds' || trainingMatch[1] === 'precision' ? trainingMatch[1] : null
+      onTrainingExercise(exercise)
+      if (!exercise) {
+        onDifficulty('facile')
+        onFormat('time', 0, 10 * 60)
+        onPowerups(false)
+      }
+      setTerminalEntered(true)
+      setCommandFeedback(exercise === 'rebonds' ? 'EXERCICE // 30 REBONDS SUR LES MURS · TAPE « LANCER »' : exercise === 'precision' ? 'EXERCICE // 20 RENVOIS AU CENTRE DE LA RAQUETTE · TAPE « LANCER »' : 'ENTRAÎNEMENT // IA FACILE · 10 MIN · SANS BONUS')
+      setCommand('')
+      return
+    }
+
+    const modeCommand = /casse[- ]?brique|\bbrick\b|\b(duel|en ligne|online|solo|ia|ordinateur)\b/.test(value)
+    if (/casse[- ]?brique|\bbrick\b/.test(value)) nextTab = 'brick'
+    else if (/\b(duel|en ligne|online)\b/.test(value)) nextTab = 'online'
+    else if (/\b(solo|ia|ordinateur)\b/.test(value)) nextTab = 'ai'
+    const difficulty = DIFFICULTIES.find((item) => value.includes(item))
+    const durationMatch = value.match(/(\d+)\s*(?:min(?:ute)?s?|m)\b/)
+    const pointsMatch = value.match(/(?:^|\s)(\d+)\s*(?:pt|pts|point|points)\b/)
+      ?? value.match(/(?:^|\s)(5|7|11|15)(?=\s|$)/)
+    const disablesBonus = /\b(sans (?:les )?bonus|bonus off|bonus d[ée]sactiv[ée]s?)\b/.test(value)
+    const bonusCommand = disablesBonus || /\b(bonus|power ?ups?)\b/.test(value)
+    if (!modeCommand && (difficulty || durationMatch || pointsMatch)) nextTab = 'ai'
+    if (!modeCommand && !difficulty && !durationMatch && !pointsMatch && !bonusCommand) {
+      setCommandFeedback('Commande inconnue. Exemples : « solo facile 7 points », « duel », « casse-brique ».')
+      return
+    }
+    onDailyChallenge(null)
+    onSurvival(false)
+    onLocalDuel(false)
+    onTrainingExercise(null)
+    setTerminalEntered(true)
+    if (nextTab !== tab) onTabChange(nextTab)
+
+    if (difficulty && nextTab === 'ai') onDifficulty(difficulty)
+
+    if (nextTab !== 'brick' && nextTab !== 'online') {
+      if (durationMatch) {
+        const minutes = Math.max(1, Math.min(60, Number(durationMatch[1])))
+        onFormat('time', state.target, minutes * 60)
+      } else if (pointsMatch) {
+        onFormat('points', Math.max(1, Math.min(99, Number(pointsMatch[1]))), duration)
+      }
+    }
+
+    if (disablesBonus) onPowerups(false)
+    else if (/\b(bonus|power ?ups?)\b/.test(value)) onPowerups(true)
+
+    const applied: string[] = [nextTab === 'ai' ? 'SOLO' : nextTab === 'online' ? 'DUEL' : 'CASSE-BRIQUE']
+    if (difficulty && nextTab === 'ai') applied.push(difficulty.toUpperCase())
+    if (durationMatch && nextTab === 'ai') applied.push(`${Math.max(1, Math.min(60, Number(durationMatch[1])))} MIN`)
+    else if (pointsMatch && nextTab === 'ai') applied.push(`${Math.max(1, Math.min(99, Number(pointsMatch[1])))} POINTS`)
+    if (bonusCommand) applied.push(disablesBonus ? 'SANS BONUS' : 'BONUS')
+    setCommandFeedback(`CONFIGURATION APPLIQUÉE // ${applied.join(' · ')}`)
+    setCommand('')
+  }
+
+  const submitCommand = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    applyCommand(command)
+  }
+
+  const completeCommand = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Tab') return
+    event.preventDefault()
+    const current = command.trim().toLocaleLowerCase('fr-FR').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    const cycling = completion?.candidates.includes(current) ? completion : null
+    const prefix = cycling?.prefix ?? current
+    const candidates = cycling?.candidates ?? TERMINAL_COMMANDS.filter((item) =>
+      item.startsWith(prefix) && item !== prefix,
+    )
+    if (candidates.length === 0) {
+      setCommandFeedback('Aucune suggestion. Tape aide pour afficher les commandes.')
+      setCompletion(null)
+      return
+    }
+    const index = cycling ? (cycling.index + 1) % candidates.length : 0
+    setCommand(candidates[index] ?? '')
+    setCompletion({ prefix, candidates, index })
+  }
+
+  if (!terminalEntered) {
+    return (
+      <div className="terminal-backdrop terminal-startup absolute inset-0 z-20 flex items-center justify-center overflow-y-auto p-4">
+        <section className="terminal-panel animate-rise w-full max-w-2xl p-5 sm:p-8" aria-labelledby="terminal-welcome">
+          <div className="terminal-bar mb-6">
+            <span id="terminal-welcome">P1NG-P0NG // CONSOLE DE JEU</span>
+            <span className="terminal-status">En attente</span>
+          </div>
+          <pre className="terminal-help mb-6 overflow-x-auto text-[10px] leading-relaxed text-emerald-100/70 sm:text-xs">{commandHelp}</pre>
+          <form onSubmit={submitCommand} className="terminal-start-form border-t border-emerald-300/20 pt-4">
+            <label htmlFor="startup-command" className="mb-2 block text-[9px] tracking-[0.2em] text-emerald-300/60 uppercase">Commande d’aide : aide · Tab complète · Entrée exécute</label>
+            <div className="flex items-center gap-2 font-mono-game text-sm sm:text-base">
+              <span className="text-emerald-300" aria-hidden="true">&gt;</span>
+              <input
+                id="startup-command"
+                autoFocus
+                value={command}
+                onChange={(event) => { setCommand(event.target.value); setCompletion(null) }}
+                onKeyDown={completeCommand}
+                placeholder="aide"
+                autoComplete="off"
+                spellCheck={false}
+                className="terminal-input min-w-0 flex-1 bg-transparent py-2 text-emerald-50 outline-none placeholder:text-emerald-100/25"
+                aria-describedby="startup-feedback"
+              />
+            </div>
+            <p id="startup-feedback" className="terminal-feedback mt-3 min-h-10 whitespace-pre-line text-[10px] leading-relaxed text-emerald-300/80" role="status" aria-live="polite">{commandFeedback}</p>
+          </form>
+        </section>
+      </div>
+    )
+  }
 
   return (
-    <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-[#05060a]/55 p-4 pt-8 backdrop-blur-md">
-      <div className="glass-panel animate-rise my-6 w-full max-w-3xl rounded-3xl p-6 sm:p-8">
+    <div className="terminal-backdrop absolute inset-0 z-20 flex items-start justify-center overflow-y-auto p-4 pt-8 backdrop-blur-md">
+      <div className="terminal-panel animate-rise my-6 w-full max-w-3xl p-6 sm:p-8">
+        <div className="terminal-bar mb-5">
+          <span>Console de configuration // {tab === 'online' ? 'multijoueur' : tab === 'brick' ? 'casse-brique' : 'solo'}</span>
+          <span className="terminal-status">Système actif</span>
+        </div>
+        <form onSubmit={submitCommand} className="mb-5 rounded-lg border border-[var(--accent)]/25 bg-black/35 p-3 sm:p-4">
+          <label htmlFor="match-command" className="mb-2 block text-[9px] font-semibold tracking-[0.28em] text-zinc-500 uppercase">
+            Configuration rapide // saisis ou sélectionne
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="font-mono-game text-sm font-bold text-[var(--accent)]" aria-hidden="true">&gt;_</span>
+            <input
+              id="match-command"
+              value={command}
+              onChange={(event) => { setCommand(event.target.value); setCompletion(null) }}
+              onKeyDown={completeCommand}
+              placeholder="solo facile 7 points bonus"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono-game min-w-0 flex-1 border-0 bg-transparent py-2 text-sm text-white outline-none placeholder:text-zinc-700 focus:ring-0"
+              aria-describedby="command-help command-feedback"
+            />
+            <button type="submit" aria-label="Exécuter la commande" className="primary-button rounded-md px-2 py-2 text-sm font-bold">↵</button>
+          </div>
+          <p id="command-help" className="mt-1 text-[9px] text-zinc-600">Entrée pour exécuter · <code>aide</code> pour la syntaxe · ex. <code>solo facile 7 pts</code>, <code>duel</code>, <code>casse-brique</code>, <code>lancer</code>.</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {['defi', 'survie', 'duel local', 'entrainement rebonds', 'entrainement precision', 'solo facile 7 pts', 'duel', 'casse-brique'].map((preset) => (
+              <button key={preset} type="button" onClick={() => applyCommand(preset)} className="glass-button rounded-md px-2 py-1 text-[9px] text-zinc-400 hover:text-white">
+                {preset}
+              </button>
+            ))}
+          </div>
+          <p id="command-feedback" className="mt-2 min-h-3 text-[9px] text-[var(--accent)]" role="status" aria-live="polite">{commandFeedback}</p>
+        </form>
+        {state.challenge && (
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-200/20 bg-cyan-300/5 px-3 py-2 font-mono-game text-[10px] text-cyan-100/80">
+            <span>{state.challengeNotice} · {state.contractComplete ? 'CONTRAT VALIDÉ' : `CONTRAT ${CONTRACT_INFO[state.challenge.contract].label.toUpperCase()}`}
+              {challengeRecord && ` · RECORD ${challengeRecord.best} PTS${challengeRecord.contract ? ' · CONTRAT OK' : ''}${challengeRecord.hasReplay ? ' · FANTÔME ACTIF' : ''}`}
+            </span>
+            <button type="button" className="glass-button rounded px-2 py-1" onClick={() => { void navigator.clipboard?.writeText(state.challenge!.code); setCommandFeedback(`CODE ${state.challenge!.code} COPIÉ // partage-le pour comparer vos scores`) }}>Copier {state.challenge.code}</button>
+          </div>
+        )}
+        <div className="terminal-mode-line mb-6 flex items-center gap-2 font-mono-game text-[10px] tracking-[0.16em] text-emerald-300/70 uppercase">
+          <span className="terminal-status">Mode actif</span>
+          <span>{state.localDuel ? 'DUEL LOCAL / 2 JOUEURS' : state.survivalMode ? 'SURVIE / IA ADAPTATIVE' : state.trainingExercise ? `ENTRAINEMENT / ${state.trainingExercise.toUpperCase()}` : tab === 'online' ? 'DUEL EN LIGNE' : tab === 'brick' ? 'CASSE-BRIQUE / SOLO' : 'PONG / IA'}</span>
+        </div>
         {/* Onglets de mode */}
         <div className="mb-7 grid grid-cols-3 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
           {(
@@ -98,7 +405,7 @@ export default function StartOverlay({
                 key={item.id}
                 type="button"
                 onClick={() => onTabChange(item.id)}
-                className={`rounded-lg px-3 py-2.5 text-xs font-bold tracking-[0.15em] uppercase transition-all ${
+                className={`terminal-mode-tab rounded-lg px-3 py-2.5 text-xs font-bold tracking-[0.15em] uppercase transition-all ${
                   active ? 'text-black' : 'text-zinc-400 hover:text-white'
                 }`}
                 style={
@@ -132,7 +439,7 @@ export default function StartOverlay({
                   P1NG-P0NG
                 </div>
                 <h1 className="ping-title mt-3 text-5xl leading-[0.9] font-extrabold tracking-tight sm:text-6xl">
-                  P1NG-P0NG
+                  P<span className="brand-dark-digit">1</span>NG-P<span className="brand-dark-digit">0</span>NG
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
                   Le Pong de base, en néon. 4 niveaux de difficulté, une balle qui accélère à
@@ -150,9 +457,9 @@ export default function StartOverlay({
                   <span className="block text-2xl leading-tight sm:text-3xl">Contre un mur de briques</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Joue seul contre un mur de briques : renvoie la balle avec ta raquette pour
-                  toutes les détruire. Ce mode se joue uniquement en portrait. Tu as 3 vies ;
-                  chaque balle manquée t’en coûte une.
+                  Envoie la balle vers le mur avec ta raquette, puis rattrape-la à son retour pour
+                  continuer. Détruis toutes les briques : tu as 3 vies et ce mode se joue
+                  uniquement en portrait.
                 </p>
               </>
             ) : (
@@ -310,11 +617,14 @@ export default function StartOverlay({
                   </button>
                 </div>
                 {powerups && (
-                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
-                    Des bonus apparaissent sur le terrain. La balle qui les traverse active
-                    l’effet : accélération, ralentissement, agrandissement ou rétrécissement de
-                    raquette.
-                  </p>
+                  <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                    {POWERUP_TYPES.map((type) => (
+                      <li key={type} className="flex gap-2 rounded-lg border border-white/5 bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed">
+                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: POWERUP_COLOR[type], boxShadow: `0 0 8px ${POWERUP_COLOR[type]}` }} />
+                        <span><strong className="text-zinc-200">{POWERUP_INFO[type].label}</strong><span className="block text-zinc-500">{POWERUP_INFO[type].description}</span></span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
 
                 {/* Thème */}
@@ -322,20 +632,21 @@ export default function StartOverlay({
                   <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
                     Thème
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {['Néon', 'Synthwave', 'Rétro', 'Minimal'].map((label, i) => {
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                    {['Neon', 'Synthwave', 'Retro', 'Minimal', 'Terminal', 'Plasma', 'Aurora'].map((label, i) => {
                       const active = theme === i
+                      const unlocked = unlockedThemes.includes(i)
                       return (
                         <button
                           key={label}
                           type="button"
-                          onClick={() => onTheme(i)}
-                          className={`glass-button rounded-lg px-2 py-2 text-xs font-semibold ${
-                            active ? 'text-white' : 'text-zinc-400'
-                          }`}
+                          disabled={!unlocked}
+                          title={unlocked ? label : 'A gagner avec un succes'}
+                          onClick={() => unlocked && onTheme(i)}
+                          className={`glass-button rounded-lg px-2 py-2 text-xs font-semibold ${active ? 'text-white' : unlocked ? 'text-zinc-400' : 'cursor-not-allowed text-zinc-700'}`}
                           style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
                         >
-                          {label}
+                          {unlocked ? label : `VERROU · ${label}`}
                         </button>
                       )
                     })}
@@ -367,6 +678,30 @@ export default function StartOverlay({
                   </div>
                 </div>
 
+                <div className="mt-5 border-t border-white/5 pt-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label htmlFor="sensitivity" className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">Sensibilité</label>
+                    <span className="font-mono-game text-[10px] text-zinc-500">{Math.round(sensitivity * 100)}%</span>
+                  </div>
+                  <input id="sensitivity" type="range" min={0.5} max={1.5} step={0.05} value={sensitivity} onChange={(e) => onSensitivity(Number(e.target.value))} className="hue-range" aria-label="Sensibilité des commandes" />
+                  <p className="mt-1 text-[10px] text-zinc-600">Ajuste la réactivité de la souris et du glissement tactile.</p>
+                </div>
+
+                <div className="mt-4 grid gap-2 sm:grid-cols-2" aria-label="Options audio et accessibilité">
+                  <button type="button" onClick={onToggleEffects} className="glass-button flex items-center justify-between rounded-lg px-3 py-2 text-[10px] text-zinc-300">
+                    Effets sonores <span className={state.muted ? 'text-amber-300' : 'text-emerald-300'}>{state.muted ? 'Coupés' : 'Activés'}</span>
+                  </button>
+                  <button type="button" onClick={onToggleMusic} className="glass-button flex items-center justify-between rounded-lg px-3 py-2 text-[10px] text-zinc-300">
+                    Musique <span className={musicMuted ? 'text-amber-300' : 'text-emerald-300'}>{musicMuted ? 'Coupée' : 'Activée'}</span>
+                  </button>
+                  <button type="button" onClick={() => onReduceMotion(!reduceMotion)} className="glass-button flex items-center justify-between rounded-lg px-3 py-2 text-[10px] text-zinc-300">
+                    Animations réduites <span className={reduceMotion ? 'text-emerald-300' : 'text-zinc-500'}>{reduceMotion ? 'Oui' : 'Non'}</span>
+                  </button>
+                  <button type="button" onClick={() => onHighContrast(!highContrast)} className="glass-button flex items-center justify-between rounded-lg px-3 py-2 text-[10px] text-zinc-300">
+                    Contraste renforcé <span className={highContrast ? 'text-emerald-300' : 'text-zinc-500'}>{highContrast ? 'Oui' : 'Non'}</span>
+                  </button>
+                </div>
+
                 {/* Intensité du glow */}
                 <div className="mt-4">
                   <div className="mb-2 flex items-center justify-between">
@@ -379,7 +714,7 @@ export default function StartOverlay({
                   </div>
                   <input
                     type="range"
-                    min={0.3}
+                    min={0}
                     max={1.8}
                     step={0.05}
                     value={glow}
@@ -394,32 +729,53 @@ export default function StartOverlay({
                 </div>
 
 
-              {history.length > 0 && (
-                <div className="mt-6 border-t border-white/5 pt-4">
-                  <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
-                    Historique
+              <div className="mt-6 border-t border-white/5 pt-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">Statistiques et historique</div>
+                    <select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value as typeof historyFilter)} className="rounded-md border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-zinc-300" aria-label="Filtrer les parties">
+                      <option value="all">Tous les modes</option><option value="ai">Solo IA</option><option value="online">En ligne</option><option value="brick">Casse-brique</option>
+                    </select>
                   </div>
-                  <div className="space-y-1 text-[11px] text-zinc-400">
-                    {history.slice(0, 5).map((h, i) => (
-                      <div key={i} className="flex items-center justify-between">
-                        <span>
-                          {h.mode === 'online' ? 'En ligne' : 'Solo'} · {h.difficulty} ·{' '}
-                          {h.format === 'time' ? 'temps' : `${h.target} pts`}
-                        </span>
-                        <span className="font-mono-game">
-                          {h.scorePlayer} - {h.scoreAi}
-                        </span>
+                  <div className="mb-3 grid grid-cols-5 gap-1.5 text-center">
+                    {[
+                      ['Parties', filteredHistory.length], ['Victoires', wins], ['Défaites', losses], ['Nuls', draws], ['Record', bestScore],
+                    ].map(([label, count]) => (
+                      <div key={label} className="rounded-md border border-white/5 bg-black/20 px-1 py-2">
+                        <div className="font-mono-game text-sm font-bold text-zinc-200">{count}</div>
+                        <div className="text-[8px] tracking-wider text-zinc-500 uppercase">{label}</div>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                  <div className="mb-3 rounded-md border border-cyan-200/10 bg-cyan-200/[0.03] p-3">
+                    <div className="mb-2 flex items-center justify-between font-mono-game text-[10px] text-cyan-100/75">
+                      <span>Série de défis quotidiens</span><strong>{dailyStreak} jour{dailyStreak === 1 ? '' : 's'}</strong>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {achievements.length === 0 && <span className="text-[9px] text-zinc-600">Aucun succès débloqué pour le moment.</span>}
+                      {achievements.map((id) => <span key={id} className="rounded border border-cyan-200/15 bg-cyan-200/[0.06] px-2 py-1 text-[9px] text-cyan-100/80">✦ {ACHIEVEMENT_LABELS[id] ?? id}</span>)}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 text-[10px] text-zinc-400">
+                    {filteredHistory.length === 0 && <p className="py-3 text-center text-zinc-600">Aucune partie pour ce filtre.</p>}
+                    {filteredHistory.slice(0, 10).map((h, i) => (
+                      <div key={`${h.date}-${i}`} className="flex items-center justify-between gap-2 rounded-md bg-black/20 px-2.5 py-2">
+                        <span className="min-w-0 truncate">
+                          {h.brickMode ? 'Casse-brique · Solo' : `${h.mode === 'online' ? 'En ligne' : 'Solo IA'} · ${h.difficulty} · ${h.format === 'time' ? 'temps' : `${h.target} pts`}`}
+                          {h.challengeCode && <span className="ml-2 text-cyan-200/70">Défi {h.challengeCode}{h.contractComplete ? ' · Contrat validé' : ''}</span>}
+                          <span className="ml-2 text-zinc-600">{new Date(h.date).toLocaleDateString('fr-FR')}</span>
+                        </span>
+                        <span className="font-mono-game shrink-0 text-zinc-200">{h.brickMode ? `${h.scorePlayer} briques` : `${h.scorePlayer} - ${h.scoreAi}`}</span>
+                        {h.result && <span className={`shrink-0 text-[8px] uppercase ${h.result === 'win' ? 'text-emerald-300' : h.result === 'loss' ? 'text-rose-300' : 'text-amber-300'}`}>{h.result === 'win' ? 'Gagné' : h.result === 'loss' ? 'Perdu' : 'Nul'}</span>}
+                      </div>
+                    ))}
+                  </div>
+              </div>
                   </div>
                 </details>
 
               {/* Astuce de contrôle */}
               <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
-                Souris ou flèches · <span className="text-zinc-500">Espace</span> = pause
+                Souris, tactile ou flèches · <span className="text-zinc-500">Espace</span> = pause
               </p>
               </>
             )}
@@ -456,17 +812,15 @@ export default function StartOverlay({
             </div>
           </div>
         </div>
-        {tab !== 'online' && (
-          <div className="mt-7 text-center">
-            <button
-              type="button"
-              onClick={onStart}
-              className="primary-button rounded-xl px-10 py-3 text-sm font-bold tracking-[0.2em] uppercase"
-            >
-              Jouer
-            </button>
+        <div className="mt-7 text-center">
+          {tab !== 'online' && <div className="mb-3 text-[9px] font-semibold tracking-[0.28em] text-zinc-600 uppercase">Session prête // confirme pour démarrer</div>}
+          <div className="flex flex-wrap justify-center gap-2">
+            {tab !== 'online' && (
+              <button type="button" onClick={onStart} className="primary-button rounded-xl px-10 py-3 text-sm font-bold tracking-[0.2em] uppercase">&gt; Lancer la partie ↵</button>
+            )}
+            <button type="button" onClick={onTutorial} className="glass-button rounded-xl px-5 py-3 text-xs font-semibold tracking-[0.12em] text-zinc-300">Aide / tutoriel</button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

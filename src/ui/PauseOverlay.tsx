@@ -8,8 +8,12 @@ interface PauseOverlayProps {
 
 export default function PauseOverlay({ onResume, onRestart, onMenu }: PauseOverlayProps) {
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#05060a]/55 p-4 backdrop-blur-md">
-      <div className="glass-panel animate-rise w-full max-w-sm rounded-3xl p-8 text-center">
+    <div className="terminal-backdrop absolute inset-0 z-20 flex items-center justify-center p-4 backdrop-blur-md">
+      <div className="terminal-panel animate-rise w-full max-w-sm p-8 text-center">
+        <div className="terminal-bar mb-6">
+          <span>Contrôle de partie</span>
+          <span className="terminal-status">En pause</span>
+        </div>
         <h2 className="ping-title text-4xl font-extrabold tracking-tight">Pause</h2>
         <p className="mt-2 text-xs tracking-[0.3em] text-zinc-500 uppercase">La balle attend</p>
 

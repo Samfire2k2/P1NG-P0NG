@@ -13,17 +13,24 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
   const localIsLeft = state.side === 'left'
   const localScore = localIsLeft ? state.scorePlayer : state.scoreAi
   const otherScore = localIsLeft ? state.scoreAi : state.scorePlayer
-  const won = localScore > otherScore
-  const draw = state.draw || localScore === otherScore
+  const brickMode = state.brickMode
+  const won = brickMode || state.trainingExercise ? state.winner === 'player' : localScore > otherScore
+  const draw = !brickMode && !state.trainingExercise && !state.survivalMode && (state.draw || localScore === otherScore)
   const accent = draw
     ? '#a1a1aa'
     : won
       ? rgbToCss(hsvToRgb(state.color.h, state.color.s, state.color.v))
-      : rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v))
+      : brickMode
+        ? '#fb7185'
+        : rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v))
 
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#05060a]/60 p-4 backdrop-blur-md">
-      <div className="glass-panel animate-rise w-full max-w-sm rounded-3xl p-8 text-center">
+    <div className="terminal-backdrop absolute inset-0 z-20 flex items-center justify-center p-4 backdrop-blur-md">
+      <div className="terminal-panel animate-rise max-h-[90dvh] w-full max-w-sm overflow-y-auto p-6 text-center sm:p-8">
+        <div className="terminal-bar mb-6">
+          <span>Rapport de session</span>
+          <span className="terminal-status">Partie terminée</span>
+        </div>
         <div className="flex justify-center" style={{ color: accent }}>
           <IconTrophy className="h-9 w-9" />
         </div>
@@ -34,10 +41,14 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
           {draw ? 'Égalité' : won ? 'Victoire' : 'Défaite'}
         </h2>
         <p className="mt-2 text-xs tracking-[0.3em] text-zinc-500 uppercase">
-          {draw ? 'Match nul' : won ? 'Match gagné' : 'Match perdu'}
+          {brickMode ? (won ? 'Mur détruit' : 'Plus de vies') : state.survivalMode ? 'Survie terminée' : state.trainingExercise ? 'Exercice terminé' : draw ? 'Match nul' : won ? 'Match gagné' : 'Match perdu'}
         </p>
 
-        <div className="font-mono-game mt-6 flex items-center justify-center gap-5 text-4xl font-bold">
+        {brickMode ? (
+          <div className="font-mono-game mt-6 text-2xl font-bold sm:text-3xl" style={{ color: accent }}>
+            {state.bricksBroken} briques détruites
+          </div>
+        ) : <div className="font-mono-game mt-6 flex items-center justify-center gap-5 text-4xl font-bold">
           <span style={{ color: rgbToCss(hsvToRgb(state.color.h, state.color.s, state.color.v)) }}>
             {state.scorePlayer}
           </span>
@@ -45,6 +56,15 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
           <span style={{ color: rgbToCss(hsvToRgb(state.peerColor.h, state.peerColor.s, state.peerColor.v)) }}>
             {state.scoreAi}
           </span>
+        </div>}
+
+        <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg border border-white/8 bg-black/25 p-3 text-left font-mono-game text-[10px] text-zinc-400">
+          <span>Durée</span><span className="text-right text-zinc-200">{Math.floor(state.matchStats.duration / 60)}:{Math.floor(state.matchStats.duration % 60).toString().padStart(2, '0')}</span>
+          <span>Renvois de raquette</span><span className="text-right text-zinc-200">{state.matchStats.paddleHits}</span>
+          <span>Rebonds sur les murs</span><span className="text-right text-zinc-200">{state.matchStats.wallHits}</span>
+          <span>Bonus ramassés</span><span className="text-right text-zinc-200">{state.matchStats.powerups}</span>
+          {state.survivalMode && <><span>Niveau atteint</span><span className="text-right text-cyan-200">{state.survivalLevel + 1}</span></>}
+          {state.trainingExercise && <><span>Objectif d’entraînement</span><span className="text-right text-cyan-200">{state.trainingProgress}/{state.trainingExercise === 'rebonds' ? 30 : 20}</span></>}
         </div>
 
         <button

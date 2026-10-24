@@ -81,18 +81,46 @@ export default function OnlineLobby({
   const [code, setCode] = useState(initialCode)
   const [key, setKey] = useState(initialKey)
   const [copied, setCopied] = useState(false)
+  const [shareMessage, setShareMessage] = useState('')
 
   const waiting = status === 'waiting' || status === 'connecting'
   const connected = status === 'connected' || peerConnected
+
+  const copyInvite = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(inviteLink)
+      setCopied(true)
+      setShareMessage('Lien copié : tu peux l’envoyer à ton adversaire.')
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      const input = document.getElementById('invite-link') as HTMLInputElement | null
+      input?.select()
+      setShareMessage('Copie indisponible : sélectionne le lien puis copie-le.')
+    }
+  }
+
+  const shareInvite = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'P1NG-P0NG', text: 'Rejoins ma partie en ligne !', url: inviteLink })
+        setShareMessage('Invitation partagée.')
+        return
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+      }
+    }
+    await copyInvite()
+  }
 
   let content: React.ReactNode = null
 
   if (waiting) {
     content = (
       <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5">
-        <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase">
+        <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.3em] text-zinc-500 uppercase" role="status" aria-live="polite">
           <Spinner />
-          {status === 'connecting' ? 'Connexion…' : 'En attente d’un joueur'}
+          {status === 'connecting' ? 'Établissement de la connexion' : 'Salon prêt · en attente d’un joueur'}
         </div>
 
         {roomCode && (
@@ -111,27 +139,26 @@ export default function OnlineLobby({
           <div className="mt-4 flex gap-2">
             <input
               readOnly
+              id="invite-link"
               value={inviteLink}
               onFocus={(e) => e.currentTarget.select()}
               className="font-mono-game min-w-0 flex-1 truncate rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[11px] text-zinc-400 outline-none focus:border-[var(--accent)]"
               aria-label="Lien d'invitation"
             />
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard?.writeText(inviteLink)
-                setCopied(true)
-                setTimeout(() => setCopied(false), 1800)
-              }}
-              className="glass-button shrink-0 rounded-lg px-3 py-2 text-[11px] font-semibold text-zinc-300"
-            >
-              {copied ? 'Copié ✓' : 'Copier'}
+            <button type="button" onClick={() => void copyInvite()} className="glass-button shrink-0 rounded-lg px-3 py-2 text-[11px] font-semibold text-zinc-300">
+              {copied ? 'Copié ✓' : 'Copier le lien'}
             </button>
           </div>
         )}
 
+        {inviteLink && navigator.share && (
+          <button type="button" onClick={() => void shareInvite()} className="glass-button mt-2 w-full rounded-lg px-3 py-2 text-[11px] font-semibold text-zinc-300">Partager l’invitation</button>
+        )}
+
+        {shareMessage && <p className="mt-2 text-[10px] text-[var(--accent)]" role="status">{shareMessage}</p>}
+
         <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
-          Envoie le lien, ou le code et la clé. Ton adversaire n’aura qu’à cliquer.
+          Envoie le lien à ton adversaire, ou partage le code du salon avec sa clé. Il pourra rejoindre depuis l’onglet « En ligne ».
         </p>
 
         <button
@@ -146,7 +173,8 @@ export default function OnlineLobby({
     )
   } else if (connected) {
     content = (
-      <div className="rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.06] p-5 text-center">
+      <div className="rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.06] p-5 text-center" role="status" aria-live="polite">
+        <div className="terminal-status justify-center text-[9px] uppercase">Connexion établie</div>
         <IconTrophy className="mx-auto h-6 w-6" style={{ color: 'var(--accent)' }} />
         <p className="mt-2 text-sm font-semibold text-white">
           {peerName ? `${peerName} est connecté` : 'Adversaire connecté'}

@@ -1,14 +1,16 @@
 import { audio } from './audio'
 import type { Hsv } from './colors'
 import { aiHsvFrom, hsvToRgb } from './colors'
-import { FIXED_DT, MAX_STEPS_PER_FRAME, type Difficulty, type MatchFormat } from './constants'
+import { FIELD_HEIGHT, FIXED_DT, MAX_STEPS_PER_FRAME, type Difficulty, type MatchFormat } from './constants'
 import { clamp, lerp } from './math'
 import { music } from './music'
-import { World, type GameEvent, type Side } from './world'
+import { POWERUP_TYPES, World, type GameEvent, type PowerupType, type Side } from './world'
+import { POWERUP_INFO } from './powerups'
 import { SnapshotInterpolator } from '../net/interpolator'
 import { CTRL, NET_EVENT, NetSession, type NetMeta, type NetSnapshot, type NetStatus } from '../net/session'
 import { DEFAULT_RENDER_SETTINGS, Renderer, type RenderSettings } from '../render/renderer'
 import { computeView } from '../render/view'
+import type { DailyChallenge, ReplayFrame } from './arcade'
 
 export type EnginePhase = 'menu' | 'playing' | 'paused' | 'gameover'
 export type GameMode = 'ai' | 'online'
@@ -52,10 +54,32 @@ export interface EngineState {
   powerups: boolean
   /** Mode casse-brique actif. */
   brickMode: boolean
+  /** Vies et briques restantes en mode casse-brique. */
+  brickLives: number
+  bricksLeft: number
+  bricksBroken: number
+  /** Nom du dernier bonus obtenu localement, affiché brièvement. */
+  powerupNotice: string | null
+  powerupDescription: string | null
+  powerupNoticeIsOpponent: boolean
+  activePowerups: Array<{ type: PowerupType; remaining: number | null }>
+  /** Dernier événement de jeu, affiché brièvement. */
+  gameNotice: string | null
   /** Orientation du terrain. */
   orientation: 'landscape' | 'portrait'
   /** Durée d'une manche chronométrée (secondes). */
   duration: number
+  challenge: DailyChallenge | null
+  contractProgress: number
+  contractComplete: boolean
+  challengeNotice: string | null
+  replayFrames: ReplayFrame[]
+  survivalMode: boolean
+  localDuel: boolean
+  trainingExercise: 'rebonds' | 'precision' | null
+  trainingProgress: number
+  survivalLevel: number
+  matchStats: { duration: number; paddleHits: number; wallHits: number; powerups: number }
 }
 
 export interface EngineOptions {
@@ -122,6 +146,17 @@ export class GameEngine {
   private brickMode = false
   private orientation: 'landscape' | 'portrait' = 'landscape'
   private duration = 180
+  private challenge: DailyChallenge | null = null
+  private contractProgress = 0
+  private replayFrames: ReplayFrame[] = []
+  private replayAccumulator = 0
+  private ghostReplay: ReplayFrame[] = []
+  private survivalMode = false
+  private localDuel = false
+  private trainingExercise: 'rebonds' | 'precision' | null = null
+  private trainingProgress = 0
+  private matchStats = { paddleHits: 0, wallHits: 0, powerups: 0 }
+  private matchDuration = 0
   private muted: boolean
   private fps = 60
   private frameEma = 16.7
@@ -135,6 +170,11 @@ export class GameEngine {
   private pointerActive = false
   private pointerClientX = 0
   private pointerClientY = 0
+  private sensitivity = 1
+  private touchUp = false
+  private touchDown = false
+  private localRightUp = false
+  private localRightDown = false
 
   private session: NetSession | null = null
   private interpolator = new SnapshotInterpolator()
@@ -150,6 +190,13 @@ export class GameEngine {
   private playerName = ''
   private peerName = ''
   private peerColor: Hsv = { h: 0, s: 0.9, v: 1 }
+  private powerupNotice: string | null = null
+  private powerupDescription: string | null = null
+  private powerupNoticeIsOpponent = false
+  private powerupNoticeTimer = 0
+  private activePowerups = new Set<PowerupType>()
+  private gameNotice: string | null = null
+  private gameNoticeTimer = 0
   /** Effet sonore à relayer à l'invité (hôte uniquement). */
   private netEvent: { id: number; type: number; side: number; power: number; offset: number } | null = null
   private netEventId = 0
@@ -225,16 +272,149 @@ export class GameEngine {
       netMessage: this.netMessage,
       powerups: this.powerups,
       brickMode: this.brickMode,
+      brickLives: this.world.brickLives,
+      bricksLeft: this.world.bricksLeft,
+      bricksBroken: this.world.bricksBroken,
+      powerupNotice: this.powerupNotice,
+      powerupDescription: this.powerupDescription,
+      powerupNoticeIsOpponent: this.powerupNoticeIsOpponent,
+      activePowerups: this.getActivePowerups(),
+      gameNotice: this.gameNotice,
       spectator: this.spectator,
       orientation: this.orientation,
       duration: this.duration,
+      challenge: this.challenge,
+      contractProgress: this.contractProgress,
+      contractComplete: !!this.challenge && this.contractProgress >= this.challenge.contractTarget,
+      challengeNotice: this.challenge ? `DÉFI ${this.challenge.code} // ${this.contractProgress}/${this.challenge.contractTarget}` : null,
+      replayFrames: this.replayFrames,
+      survivalMode: this.survivalMode,
+      localDuel: this.localDuel,
+      trainingExercise: this.trainingExercise,
+      trainingProgress: this.trainingProgress,
+      survivalLevel: this.world.survivalLevel,
+      matchStats: { duration: this.matchDuration, ...this.matchStats },
     }
   }
 
   start(): void {
     audio.init()
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    if (this.challenge) {
+      this.world.setSeed(this.challenge.seed)
+      this.world.reset(this.challenge.target)
+      this.replayFrames = []
+      this.replayAccumulator = 0
+      this.contractProgress = 0
+    }
     this.world.frozen = false
+    this.matchStats = { paddleHits: 0, wallHits: 0, powerups: 0 }
+    this.matchDuration = 0
+    this.trainingProgress = 0
     this.phase = 'playing'
+    this.emit(true)
+  }
+
+  setSurvivalMode(enabled: boolean): void {
+    this.survivalMode = enabled
+    this.world.survivalMode = enabled
+    if (enabled) {
+      this.localDuel = false
+      this.trainingExercise = null
+      this.world.aiRemote = false
+      this.world.ai.snappy = false
+      this.world.target = 99
+      this.world.format = 'points'
+      this.target = 99
+      this.format = 'points'
+      this.world.difficulty = this.difficulty = 'facile'
+      this.world.powerupsEnabled = this.powerups = false
+    }
+    this.world.reset(this.target)
+    this.world.frozen = true
+    this.phase = 'menu'
+    this.emit(true)
+  }
+
+  setLocalDuel(enabled: boolean): void {
+    this.localDuel = enabled
+    if (enabled) {
+      this.survivalMode = false
+      this.trainingExercise = null
+      this.world.survivalMode = false
+      this.world.aiRemote = true
+      this.world.ai.snappy = true
+      this.world.netPaddleY = FIELD_HEIGHT / 2
+      this.world.powerupsEnabled = this.powerups
+    } else if (!this.session) {
+      this.world.aiRemote = false
+      this.world.ai.snappy = false
+    }
+    this.localRightUp = false
+    this.localRightDown = false
+    this.world.reset(this.target)
+    this.world.frozen = true
+    this.phase = 'menu'
+    this.emit(true)
+  }
+
+  setTrainingExercise(exercise: 'rebonds' | 'precision' | null): void {
+    this.trainingExercise = exercise
+    this.trainingProgress = 0
+    this.survivalMode = false
+    this.world.survivalMode = false
+    this.localDuel = false
+    this.world.aiRemote = false
+    if (exercise) {
+      this.difficulty = this.world.difficulty = 'facile'
+      this.powerups = this.world.powerupsEnabled = false
+      this.target = this.world.target = 99
+      this.format = this.world.format = 'points'
+    }
+    this.world.reset(this.target)
+    this.world.frozen = true
+    this.phase = 'menu'
+    this.emit(true)
+  }
+
+  setArcadeChallenge(challenge: DailyChallenge | null, ghostReplay: ReplayFrame[] = []): void {
+    this.challenge = challenge
+    if (challenge) {
+      this.survivalMode = false
+      this.world.survivalMode = false
+      this.localDuel = false
+      this.trainingExercise = null
+      this.world.aiRemote = false
+    }
+    this.contractProgress = 0
+    this.replayFrames = []
+    this.replayAccumulator = 0
+    this.ghostReplay = ghostReplay
+    this.world.setChallengeModifier(challenge?.modifier ?? null)
+    if (challenge) {
+      this.world.setSeed(challenge.seed)
+      this.difficulty = challenge.difficulty
+      this.target = challenge.target
+      this.format = 'points'
+      this.powerups = false
+      this.world.powerupsEnabled = false
+      this.world.difficulty = challenge.difficulty
+      this.world.target = challenge.target
+      this.world.format = 'points'
+      this.world.powerups = []
+      this.world.reset(challenge.target)
+      this.world.frozen = true
+      this.phase = 'menu'
+      this.renderer.resetTrail()
+    }
+    if (!challenge) {
+      this.world.ghostPaddleY = null
+      this.world.ghostBall = null
+      this.world.reset(this.target)
+      this.world.frozen = true
+      this.phase = 'menu'
+      this.renderer.resetTrail()
+    }
     this.emit(true)
   }
 
@@ -273,7 +453,17 @@ export class GameEngine {
   }
 
   private restartLocal(): void {
+    if (this.challenge) {
+      this.world.setSeed(this.challenge.seed)
+      this.replayFrames = []
+      this.replayAccumulator = 0
+      this.contractProgress = 0
+    }
     this.world.reset(this.target)
+    this.matchStats = { paddleHits: 0, wallHits: 0, powerups: 0 }
+    this.matchDuration = 0
+    this.trainingProgress = 0
+    this.activePowerups.clear()
     // L'invité ne simule pas la physique : l'hôte reste autoritatif.
     this.world.frozen = this.mode === 'online' && this.session?.role === 'guest'
     this.renderer.resetTrail()
@@ -291,6 +481,7 @@ export class GameEngine {
       return
     }
     this.world.reset(this.target)
+    this.activePowerups.clear()
     this.world.frozen = true
     this.renderer.resetTrail()
     this.phase = 'menu'
@@ -371,15 +562,20 @@ export class GameEngine {
   setPowerups(enabled: boolean): void {
     this.powerups = enabled
     this.world.powerupsEnabled = enabled
-    if (!enabled) this.world.powerups = []
+    if (!enabled) {
+      this.world.powerups = []
+      this.activePowerups.clear()
+    }
     this.emit(true)
   }
 
   setBrickMode(enabled: boolean): void {
+    if (this.brickMode === enabled) return
     this.brickMode = enabled
     this.world.brickMode = enabled
-    if (enabled) this.world.buildBricks?.()
-    else this.world.bricks = []
+    this.world.reset(this.target)
+    this.renderer.resetTrail()
+    this.accumulator = 0
     this.emit(true)
   }
 
@@ -403,6 +599,16 @@ export class GameEngine {
 
   setRenderSettings(settings: Partial<RenderSettings>): void {
     this.settings = { ...this.settings, ...settings }
+  }
+
+  setSensitivity(value: number): void {
+    this.sensitivity = clamp(value, 0.5, 1.5)
+  }
+
+  setTouchDirection(direction: -1 | 1, active: boolean): void {
+    if (direction < 0) this.touchUp = active
+    else this.touchDown = active
+    if (active) this.pointerActive = false
   }
 
   // ------------------------------------------------------------ En ligne
@@ -476,6 +682,7 @@ export class GameEngine {
 
   detachSession(): void {
     this.session = null
+    this.activePowerups.clear()
     this.mode = 'ai'
     this.netStatus = 'idle'
     this.netMessage = ''
@@ -605,6 +812,7 @@ export class GameEngine {
         break
       case NET_EVENT.SCORE:
         audio.score(side)
+        if (!this.spectator) this.showGameNotice(side === 'ai' ? 'Point pour toi' : 'Point adverse')
         break
       case NET_EVENT.SERVE:
         audio.serve()
@@ -623,7 +831,8 @@ export class GameEngine {
         audio.draw()
         break
       case NET_EVENT.POWERUP:
-        audio.powerup(snap.eventOffset, snap.eventSide === 0)
+        audio.powerup(snap.eventOffset, snap.eventSide !== 0)
+        if (!this.spectator) this.showPowerupNotice(Math.round(snap.eventOffset), snap.eventSide !== 0)
         break
       default:
         break
@@ -719,6 +928,7 @@ export class GameEngine {
   }
 
   private onPointerMove = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch' || this.localDuel) return
     this.pointerClientX = event.clientX
     this.pointerClientY = event.clientY
     this.pointerActive = true
@@ -740,10 +950,14 @@ export class GameEngine {
     } else {
       worldY = (cy - view.originY) / view.scale
     }
-    this.localPaddleTarget = worldY
+    const center = FIELD_HEIGHT / 2
+    const normalized = clamp((worldY - center) / center, -1, 1)
+    const adjusted = Math.sign(normalized) * Math.pow(Math.abs(normalized), 1 / this.sensitivity)
+    this.localPaddleTarget = center + adjusted * center
   }
 
   private onTouchStart = (event: TouchEvent): void => {
+    if (this.localDuel) return
     audio.init()
     const t = event.touches[0]
     if (t) {
@@ -755,6 +969,7 @@ export class GameEngine {
   }
 
   private onTouchMove = (event: TouchEvent): void => {
+    if (this.localDuel) return
     const t = event.touches[0]
     if (t) {
       this.pointerClientX = t.clientX
@@ -764,6 +979,7 @@ export class GameEngine {
   }
 
   private onPointerDown = (event: PointerEvent): void => {
+    if (this.localDuel) return
     audio.init()
     this.pointerClientX = event.clientX
     this.pointerClientY = event.clientY
@@ -772,7 +988,19 @@ export class GameEngine {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    const target = event.target
+    if (target instanceof Element && (
+      target.isContentEditable
+      || target.closest('input, textarea, select, button, [role="textbox"]')
+    )) return
+
     if (event.repeat) return
+    if (this.localDuel && (event.code === 'ArrowUp' || event.code === 'ArrowDown')) {
+      event.preventDefault()
+      if (event.code === 'ArrowUp') this.localRightUp = true
+      else this.localRightDown = true
+      return
+    }
     switch (event.code) {
       case 'ArrowUp':
       case 'KeyW':
@@ -821,6 +1049,11 @@ export class GameEngine {
   }
 
   private onKeyUp = (event: KeyboardEvent): void => {
+    if (this.localDuel && (event.code === 'ArrowUp' || event.code === 'ArrowDown')) {
+      if (event.code === 'ArrowUp') this.localRightUp = false
+      else this.localRightDown = false
+      return
+    }
     // En mode portrait, utiliser les flèches gauche/droite
     if (this.orientation === 'portrait') {
       if (event.code === 'ArrowLeft' || event.code === 'KeyA') this.keyUp = false
@@ -881,16 +1114,38 @@ export class GameEngine {
     const rawDt = now - this.lastTime
     this.lastTime = now
     const dt = Math.min(rawDt / 1000, 0.1)
+    if (this.phase === 'playing') this.matchDuration += dt
+
+    let noticesChanged = false
+    if (this.powerupNoticeTimer > 0) {
+      this.powerupNoticeTimer = Math.max(0, this.powerupNoticeTimer - dt)
+      if (this.powerupNoticeTimer === 0) {
+        this.powerupNotice = null
+        this.powerupDescription = null
+        noticesChanged = true
+      }
+    }
+    if (this.gameNoticeTimer > 0) {
+      this.gameNoticeTimer = Math.max(0, this.gameNoticeTimer - dt)
+      if (this.gameNoticeTimer === 0) {
+        this.gameNotice = null
+        noticesChanged = true
+      }
+    }
 
     this.updateQuality(now, rawDt)
 
     // Entrées clavier / souris
-    if (this.pointerActive) {
+    if (this.pointerActive && !this.localDuel) {
       // La raquette suit le curseur, image par image.
       this.updatePointerTarget()
     } else {
-      const dir = (this.keyUp ? -1 : 0) + (this.keyDown ? 1 : 0)
-      if (dir !== 0) this.localPaddleTarget += dir * KEYBOARD_SPEED * dt
+      const dir = (this.keyUp || this.touchUp ? -1 : 0) + (this.keyDown || this.touchDown ? 1 : 0)
+      if (dir !== 0) this.localPaddleTarget += dir * KEYBOARD_SPEED * this.sensitivity * dt
+    }
+    if (this.localDuel) {
+      const dir = (this.localRightUp ? -1 : 0) + (this.localRightDown ? 1 : 0)
+      if (dir !== 0) this.world.netPaddleY = clamp((this.world.netPaddleY ?? this.world.ai.y) + dir * KEYBOARD_SPEED * dt, this.world.ai.height / 2, FIELD_HEIGHT - this.world.ai.height / 2)
     }
 
     // Mode en ligne : échanges réseau
@@ -911,6 +1166,7 @@ export class GameEngine {
     }
 
     // Simulation à pas fixe
+    const brickScoreBeforeStep = this.world.bricksBroken
     this.accumulator += dt
     let steps = 0
     while (this.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
@@ -921,9 +1177,32 @@ export class GameEngine {
     if (steps >= MAX_STEPS_PER_FRAME) this.accumulator = 0
 
     this.handleEvents()
+    if (this.challenge && this.phase === 'playing') {
+      this.replayAccumulator += dt
+      if (this.replayAccumulator >= 0.1) {
+        this.replayAccumulator %= 0.1
+        if (this.replayFrames.length < 3600) this.replayFrames.push({ t: this.world.time, playerY: this.world.player.y, ballX: this.world.ball.x, ballY: this.world.ball.y })
+      }
+      let left: ReplayFrame | undefined
+      for (const frame of this.ghostReplay) {
+        if (frame.t > this.world.time) break
+        left = frame
+      }
+      const right = this.ghostReplay.find((frame) => frame.t >= this.world.time)
+      if (left && right) {
+        const mix = right.t === left.t ? 0 : (this.world.time - left.t) / (right.t - left.t)
+        this.world.ghostPaddleY = left.playerY + (right.playerY - left.playerY) * mix
+        this.world.ghostBall = { x: left.ballX + (right.ballX - left.ballX) * mix, y: left.ballY + (right.ballY - left.ballY) * mix }
+      } else {
+        this.world.ghostPaddleY = null
+        this.world.ghostBall = null
+      }
+    }
+    const activePowerupsChanged = this.syncActivePowerups()
     this.syncPhase()
     this.renderer.render(this.world, this.settings, this.orientation)
-    this.emit()
+    const brickScoreChanged = this.brickMode && brickScoreBeforeStep !== this.world.bricksBroken
+    this.emit(brickScoreChanged || noticesChanged || activePowerupsChanged)
   }
 
   private handleEvents(): void {
@@ -939,6 +1218,24 @@ export class GameEngine {
   }
 
   private handleEvent(ev: GameEvent): void {
+    if (ev.type === 'paddleHit') this.matchStats.paddleHits++
+    if (ev.type === 'wallHit') this.matchStats.wallHits++
+    if (ev.type === 'powerup') this.matchStats.powerups++
+    if (this.trainingExercise) {
+      if (this.trainingExercise === 'rebonds' && ev.type === 'wallHit') this.trainingProgress++
+      if (this.trainingExercise === 'precision' && ev.type === 'paddleHit' && ev.side === 'player' && Math.abs(ev.offset ?? 1) <= 0.35) this.trainingProgress++
+      const goal = this.trainingExercise === 'rebonds' ? 30 : 20
+      if (this.trainingProgress >= goal) {
+        this.world.phase = 'over'
+        this.world.winner = 'player'
+        this.world.draw = false
+      }
+    }
+    if (this.challenge && this.phase === 'playing') {
+      if (this.challenge.contract === 'rallies' && ev.type === 'paddleHit' && ev.side === 'player') this.contractProgress++
+      if (this.challenge.contract === 'wall-taps' && ev.type === 'wallHit') this.contractProgress++
+      if (this.challenge.contract === 'win' && ev.type === 'win' && ev.side === 'player') this.contractProgress = 1
+    }
     const onlineHost = this.mode === 'online' && this.session?.role === 'host'
     if (onlineHost) {
       this.netEventId++
@@ -959,6 +1256,17 @@ export class GameEngine {
         break
       case 'score':
         audio.score(ev.side ?? 'ai')
+        if (!this.spectator) {
+          if (this.world.brickMode) {
+            const notice = ev.side === 'player'
+              ? 'Bouclier : vie protégée'
+              : `Vie perdue · ${this.world.brickLives} restante${this.world.brickLives > 1 ? 's' : ''}`
+            this.showGameNotice(notice)
+          } else {
+            const localSide = this.mode === 'online' && this.session?.role === 'guest' ? 'ai' : 'player'
+            this.showGameNotice(ev.side === localSide ? 'Point pour toi' : 'Point adverse')
+          }
+        }
         break
       case 'countdown':
         audio.countdown(ev.value ?? 3)
@@ -968,6 +1276,14 @@ export class GameEngine {
         break
       case 'powerup':
         audio.powerup(ev.value ?? 0, ev.side === 'player')
+        if (!this.spectator) {
+          const isLocalPlayer = this.mode === 'online'
+            ? this.session?.role === 'guest'
+              ? ev.side === 'ai'
+              : ev.side === 'player'
+            : ev.side === 'player'
+          this.showPowerupNotice(ev.value ?? 0, isLocalPlayer)
+        }
         break
       case 'win':
         audio.win()
@@ -981,9 +1297,9 @@ export class GameEngine {
       case 'lose':
         audio.lose()
         this.world.particles.confetti(
-          this.world.ai.x - 160,
-          this.world.ai.y,
-          this.world.aiColor,
+          this.world.brickMode ? this.world.player.x + 160 : this.world.ai.x - 160,
+          this.world.brickMode ? this.world.player.y : this.world.ai.y,
+          this.world.brickMode ? this.world.playerColor : this.world.aiColor,
           160,
         )
         break
@@ -995,12 +1311,64 @@ export class GameEngine {
     }
   }
 
+  private showPowerupNotice(index: number, isLocalPlayer: boolean): void {
+    const type = POWERUP_TYPES[index]
+    if (!type) return
+    this.powerupNoticeIsOpponent = !isLocalPlayer
+    this.powerupNotice = isLocalPlayer
+      ? POWERUP_INFO[type].label
+      : `${this.mode === 'online' ? this.peerName || 'Adversaire' : 'IA'} · ${POWERUP_INFO[type].label}`
+    this.powerupDescription = POWERUP_INFO[type].description
+    this.powerupNoticeTimer = 2.2
+    if (isLocalPlayer && type !== 'teleport') this.activePowerups.add(type)
+  }
+
+  private syncActivePowerups(): boolean {
+    let changed = false
+    for (const type of this.activePowerups) {
+      let active = false
+      switch (type) {
+        case 'speed': active = this.world.ballSpeedMul > 1.001; break
+        case 'slow': active = this.world.ballSpeedMul < 0.999; break
+        case 'grow': active = this.world.playerHeightMul > 1.001; break
+        case 'shrink': active = (this.world.brickMode ? this.world.playerHeightMul : this.world.aiHeightMul) < 0.999; break
+        case 'shield': active = this.world.playerShield; break
+        case 'magnet': active = this.world.playerMagnet > 0 || this.world.aiMagnet > 0; break
+        case 'ghost': active = this.world.ghostTimer > 0; break
+        case 'double': active = this.world.playerDouble; break
+        case 'multiball': active = this.world.balls.length > 1; break
+        case 'teleport': break
+      }
+      if (!active) {
+        this.activePowerups.delete(type)
+        changed = true
+      }
+    }
+    return changed
+  }
+
+  private getActivePowerups(): EngineState['activePowerups'] {
+    return Array.from(this.activePowerups, (type) => ({
+      type,
+      remaining: type === 'magnet'
+        ? Math.max(this.world.playerMagnet, this.world.aiMagnet)
+        : type === 'ghost'
+          ? this.world.ghostTimer
+          : null,
+    }))
+  }
+
+  private showGameNotice(message: string): void {
+    this.gameNotice = message
+    this.gameNoticeTimer = 2
+  }
+
   private syncPhase(): void {
     // Musique : piste de jeu pendant la partie, piste du menu sinon.
     music.setTrack(
     this.phase === 'playing'
       ? this.world.brickMode
-        ? 'ai_brick'
+        ? 'brick'
         : this.world.mode === 'online'
         ? 'online'
         : this.world.orientation === 'portrait'
@@ -1056,6 +1424,18 @@ export class GameEngine {
       state.phase,
       state.scorePlayer,
       state.scoreAi,
+      state.brickMode,
+      state.brickLives,
+      state.bricksLeft,
+      state.bricksBroken,
+      state.contractProgress,
+      state.trainingProgress,
+      state.survivalLevel,
+      state.powerupNotice,
+      state.powerupDescription,
+      state.powerupNoticeIsOpponent,
+      state.activePowerups.map(({ type, remaining }) => `${type}:${remaining === null ? '' : Math.ceil(remaining)}`).join(','),
+      state.gameNotice,
       state.format,
       Math.round(state.timeLeft),
       state.draw,
