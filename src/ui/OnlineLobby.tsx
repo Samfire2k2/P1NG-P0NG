@@ -151,7 +151,7 @@ export default function OnlineLobby({
           </div>
         )}
 
-        {inviteLink && navigator.share && (
+        {inviteLink && typeof Reflect.get(navigator, 'share') === 'function' && (
           <button type="button" onClick={() => void shareInvite()} className="glass-button mt-2 w-full rounded-lg px-3 py-2 text-[11px] font-semibold text-zinc-300">Partager l’invitation</button>
         )}
 

@@ -224,7 +224,6 @@ export default function StartOverlay({
       }
       onDailyChallenge(challenge)
       onStart()
-      setTab('ai')
       setTerminalEntered(true)
       setCommandFeedback(`DÉFI ${challenge.code} // ${challenge.difficulty.toUpperCase()} · ${challenge.target} POINTS · ${MODIFIER_INFO[challenge.modifier].label} · CONTRAT : ${CONTRACT_INFO[challenge.contract].label}`)
       setCommand('')
@@ -233,7 +232,6 @@ export default function StartOverlay({
     if (/^survie$/.test(value)) {
       onDailyChallenge(null)
       onSurvival(true)
-      setTab('ai')
       setTerminalEntered(true)
       onStart()
       return
@@ -241,7 +239,6 @@ export default function StartOverlay({
     if (/^(?:duel\s+)?local(?:\s+a\s+deux)?$/.test(value)) {
       onDailyChallenge(null)
       onLocalDuel(true)
-      setTab('ai')
       setTerminalEntered(true)
       setCommandFeedback('DUEL LOCAL // JOUEUR 1 : W/S · JOUEUR 2 : ↑/↓')
       onStart()

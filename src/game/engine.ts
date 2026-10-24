@@ -1044,7 +1044,7 @@ export class GameEngine {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     const target = event.target
-    if (target instanceof Element && (
+    if (target instanceof HTMLElement && (
       target.isContentEditable
       || target.closest('input, textarea, select, button, [role="textbox"]')
     )) return
