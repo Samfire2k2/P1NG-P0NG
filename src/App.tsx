@@ -807,6 +807,20 @@ export default function App() {
             audio.click()
             engineRef.current?.restart()
           }}
+          onContinue={() => {
+            audio.init()
+            audio.click()
+            const chapter = nextStoryChapter(storyCompleted)
+            if (!chapter) {
+              engineRef.current?.setStoryMode(null)
+              engineRef.current?.backToMenu()
+              setTab('story')
+              return
+            }
+            setSettings((previous) => ({ ...previous, difficulty: chapter.difficulty, target: chapter.target, format: 'points', powerups: chapter.powerups, brickMode: false, orientation: 'landscape' }))
+            engineRef.current?.setStoryMode(chapter)
+            engineRef.current?.start()
+          }}
           onMenu={() => {
             audio.click()
             engineRef.current?.setStoryMode(null)

@@ -7,13 +7,14 @@ import StoryIllustration from './StoryIllustration'
 interface EndOverlayProps {
   state: EngineState
   onRestart: () => void
+  onContinue?: () => void
   onMenu: () => void
   loreReveals?: LoreEntry[]
   storyChapter?: StoryChapter | null
   nextStoryChapter?: StoryChapter | null
 }
 
-export default function EndOverlay({ state, onRestart, onMenu, loreReveals = [], storyChapter = null, nextStoryChapter = null }: EndOverlayProps) {
+export default function EndOverlay({ state, onRestart, onContinue, onMenu, loreReveals = [], storyChapter = null, nextStoryChapter = null }: EndOverlayProps) {
   const online = state.mode === 'online'
   const localIsLeft = state.side === 'left'
   const localScore = localIsLeft ? state.scorePlayer : state.scoreAi
@@ -97,14 +98,25 @@ export default function EndOverlay({ state, onRestart, onMenu, loreReveals = [],
           {state.trainingExercise && <><span>Objectif d’entraînement</span><span className="text-right text-cyan-200">{state.trainingProgress}/{state.trainingExercise === 'rebonds' ? 30 : 20}</span></>}
         </div>
 
-        <button
-          type="button"
-          onClick={onRestart}
-          className="primary-button mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-bold tracking-[0.2em] uppercase"
-        >
-          <IconPlay className="h-4 w-4" />
-          {online ? (localIsLeft ? 'Rejouer' : 'Demander revanche') : 'Rejouer'}
-        </button>
+        {state.storyMode && won && onContinue ? (
+          <button
+            type="button"
+            onClick={onContinue}
+            className="primary-button mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-bold tracking-[0.2em] uppercase"
+          >
+            <IconPlay className="h-4 w-4" />
+            Continuer
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onRestart}
+            className="primary-button mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-bold tracking-[0.2em] uppercase"
+          >
+            <IconPlay className="h-4 w-4" />
+            {online ? (localIsLeft ? 'Rejouer' : 'Demander revanche') : 'Rejouer'}
+          </button>
+        )}
 
         <button
           type="button"
