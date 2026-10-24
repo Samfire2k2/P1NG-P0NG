@@ -168,7 +168,7 @@ export class World {
   aiBricks: Brick[] = []
   /** Nombre de briques IA encore debout. */
   aiBricksLeft = 0
-  /** Briques cass�es par l'IA (score IA en mode adversaire). */
+  /** Briques cassées par l'IA (score IA en mode adversaire). */
   aiBricksBroken = 0
   bricks: Brick[] = []
   /** Nombre de briques encore debout. */
@@ -559,7 +559,7 @@ export class World {
                   })
                   this.push({ type: 'wallHit', x: brickCx, y: brickCy })
 
-                  // Victoire : premier joueur � effacer toutes les briques de l'adversaire gagne
+                  // Victoire : premier joueur à effacer toutes les briques de l'adversaire gagne
                   if (this.aiBricksLeft <= 0) {
                     this.phase = 'over'
                     this.draw = false
@@ -844,7 +844,7 @@ export class World {
 
   private onGoal(scorer: Side): void {
     // Mode casse-brique IA : le but marque un point et on relance.
-    // Victoire : premier joueur � effacer toutes les briques de l'adversaire gagne.
+    // Victoire : premier joueur à effacer toutes les briques de l'adversaire gagne.
     if (this.aiBrickMode) {
       this.scorePlayer = scorer === 'player' ? this.scorePlayer + 1 : this.scorePlayer
       this.scoreAi = scorer === 'ai' ? this.scoreAi + 1 : this.scoreAi
@@ -856,7 +856,7 @@ export class World {
       this.gridPulse = 1
       this.push({ type: 'score', side: scorer, value: scorer === 'player' ? this.scorePlayer : this.scoreAi })
 
-      // V�rifier victoire : si les briques de l'adversaire sont toutes cass�es
+      // Vérifier victoire : si les briques de l'adversaire sont toutes cassées
       if (scorer === 'player' && this.aiBricksLeft <= 0) {
         this.phase = 'over'
         this.draw = false

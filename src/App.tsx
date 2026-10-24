@@ -155,7 +155,7 @@ export default function App() {
   const [splash, setSplash] = useState(true)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
-  const [tab, setTab] = useState<GameModeTab>('ai')
+  const [tab, setTab] = useState<GameModeTab>(() => settings.brickMode ? 'brick' : 'ai')
   const [invite] = useState(readInviteParams)
   const [inviteLink, setInviteLink] = useState('')
   const [playerName, setPlayerName] = useState(loadName)
@@ -360,9 +360,11 @@ export default function App() {
     audio.click()
   }, [])
 
-  const handleBrickMode = useCallback((enabled: boolean) => {
-    setSettings((prev) => ({ ...prev, brickMode: enabled }))
-    engineRef.current?.setBrickMode(enabled)
+  const handleModeTabChange = useCallback((nextTab: GameModeTab) => {
+    setTab(nextTab)
+    const brickMode = nextTab === 'brick'
+    setSettings((prev) => ({ ...prev, brickMode }))
+    engineRef.current?.setBrickMode(brickMode)
     audio.click()
   }, [])
 
@@ -481,7 +483,7 @@ export default function App() {
         <StartOverlay
           state={state}
           tab={tab}
-          onTabChange={setTab}
+          onTabChange={handleModeTabChange}
           onStart={() => {
             audio.init()
             audio.click()
@@ -493,8 +495,6 @@ export default function App() {
           onFormat={handleFormat}
           powerups={settings.powerups}
           onPowerups={handlePowerups}
-          brickMode={settings.brickMode}
-          onBrickMode={handleBrickMode}
           theme={settings.theme}
           onTheme={(t) => setSettings((prev) => ({ ...prev, theme: t }))}
           orientation={settings.orientation}
