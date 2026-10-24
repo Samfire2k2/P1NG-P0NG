@@ -11,6 +11,7 @@ import { CTRL, NET_EVENT, NetSession, type NetMeta, type NetSnapshot, type NetSt
 import { DEFAULT_RENDER_SETTINGS, Renderer, type RenderSettings } from '../render/renderer'
 import { computeView } from '../render/view'
 import type { DailyChallenge, ReplayFrame } from './arcade'
+import type { StoryChapter } from './lore'
 
 export type EnginePhase = 'menu' | 'playing' | 'paused' | 'gameover'
 export type GameMode = 'ai' | 'online'
@@ -80,6 +81,9 @@ export interface EngineState {
   trainingProgress: number
   survivalLevel: number
   matchStats: { duration: number; paddleHits: number; wallHits: number; powerups: number }
+  storyMode: boolean
+  storyChapter: StoryChapter | null
+  storyTheme: number
 }
 
 export interface EngineOptions {
@@ -157,6 +161,9 @@ export class GameEngine {
   private trainingProgress = 0
   private matchStats = { paddleHits: 0, wallHits: 0, powerups: 0 }
   private matchDuration = 0
+  private storyMode = false
+  private storyChapter: StoryChapter | null = null
+  private storyTheme = 0
   private muted: boolean
   private fps = 60
   private frameEma = 16.7
@@ -294,6 +301,9 @@ export class GameEngine {
       trainingProgress: this.trainingProgress,
       survivalLevel: this.world.survivalLevel,
       matchStats: { duration: this.matchDuration, ...this.matchStats },
+      storyMode: this.storyMode,
+      storyChapter: this.storyChapter,
+      storyTheme: this.storyTheme,
     }
   }
 
@@ -319,6 +329,8 @@ export class GameEngine {
     this.survivalMode = enabled
     this.world.survivalMode = enabled
     if (enabled) {
+      this.storyMode = false
+      this.storyChapter = null
       this.localDuel = false
       this.trainingExercise = null
       this.world.aiRemote = false
@@ -339,6 +351,8 @@ export class GameEngine {
   setLocalDuel(enabled: boolean): void {
     this.localDuel = enabled
     if (enabled) {
+      this.storyMode = false
+      this.storyChapter = null
       this.survivalMode = false
       this.trainingExercise = null
       this.world.survivalMode = false
@@ -359,6 +373,8 @@ export class GameEngine {
   }
 
   setTrainingExercise(exercise: 'rebonds' | 'precision' | null): void {
+    this.storyMode = false
+    this.storyChapter = null
     this.trainingExercise = exercise
     this.trainingProgress = 0
     this.survivalMode = false
@@ -377,9 +393,48 @@ export class GameEngine {
     this.emit(true)
   }
 
+  setStoryMode(chapter: StoryChapter | null, theme = chapter?.theme ?? this.storyTheme): void {
+    this.storyMode = !!chapter
+    this.storyChapter = chapter
+    this.storyTheme = theme
+    if (!chapter) {
+      this.world.ghostPaddleY = null
+      this.world.ghostBall = null
+      this.emit(true)
+      return
+    }
+    this.challenge = null
+    this.survivalMode = false
+    this.localDuel = false
+    this.trainingExercise = null
+    this.brickMode = false
+    this.world.brickMode = false
+    this.world.survivalMode = false
+    this.world.aiRemote = false
+    this.world.ai.snappy = false
+    this.world.setChallengeModifier(null)
+    this.difficulty = chapter.difficulty
+    this.target = chapter.target
+    this.format = 'points'
+    this.powerups = chapter.powerups
+    this.orientation = 'landscape'
+    this.world.difficulty = chapter.difficulty
+    this.world.target = chapter.target
+    this.world.format = 'points'
+    this.world.powerupsEnabled = chapter.powerups
+    this.world.powerups = []
+    this.world.reset(chapter.target)
+    this.world.frozen = true
+    this.phase = 'menu'
+    this.renderer.resetTrail()
+    this.emit(true)
+  }
+
   setArcadeChallenge(challenge: DailyChallenge | null, ghostReplay: ReplayFrame[] = []): void {
     this.challenge = challenge
     if (challenge) {
+      this.storyMode = false
+      this.storyChapter = null
       this.survivalMode = false
       this.world.survivalMode = false
       this.localDuel = false
@@ -1200,7 +1255,8 @@ export class GameEngine {
     }
     const activePowerupsChanged = this.syncActivePowerups()
     this.syncPhase()
-    this.renderer.render(this.world, this.settings, this.orientation)
+    const renderSettings = this.storyMode ? { ...this.settings, theme: this.storyTheme } : this.settings
+    this.renderer.render(this.world, renderSettings, this.orientation)
     const brickScoreChanged = this.brickMode && brickScoreBeforeStep !== this.world.bricksBroken
     this.emit(brickScoreChanged || noticesChanged || activePowerupsChanged)
   }

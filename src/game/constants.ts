@@ -16,9 +16,9 @@ export const PLAYER_MAX_SPEED = 1900
 export const AI_BASE_MAX_SPEED = 980
 
 export const BALL_RADIUS = 12
-export const BALL_START_SPEED = 520
-export const BALL_MAX_SPEED = 1420
-export const BALL_SPEED_GAIN = 1.042
+export const BALL_START_SPEED = 620
+export const BALL_MAX_SPEED = 1640
+export const BALL_SPEED_GAIN = 1.055
 /** Angle max de rebond (radians) : 62° => balle très rasante mais jouable. */
 export const MAX_BOUNCE_ANGLE = 1.08
 /** Transfert de "l'effet" (English) : part de la vitesse verticale du paddle. */
@@ -34,8 +34,8 @@ export const TRAIL_LIFE = 0.42
 export const FIXED_DT = 1 / 240
 export const MAX_STEPS_PER_FRAME = 12
 
-export const COUNTDOWN_STEP = 0.38
-export const POINT_PAUSE = 0.9
+export const COUNTDOWN_STEP = 0.28
+export const POINT_PAUSE = 0.65
 
 /** Format d'une manche : au nombre de points, ou à la durée. */
 export type MatchFormat = 'points' | 'time'

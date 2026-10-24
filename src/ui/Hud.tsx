@@ -123,11 +123,11 @@ export default function Hud({
       <div className="terminal-readout absolute top-5 left-1/2 -translate-x-1/2 px-3 py-2 text-center">
         {state.brickMode ? (
           <div className="text-[10px] font-semibold tracking-[0.25em] text-zinc-300 uppercase">
-            Mur · {state.bricksLeft} briques restantes
+            Archives corrompues · {state.bricksLeft} fragments
           </div>
         ) : state.survivalMode ? (
           <div className="text-[10px] font-semibold tracking-[0.25em] text-cyan-200 uppercase">
-            Survie · niveau {state.survivalLevel + 1}
+            ORION · SURCHAUFFE · {state.survivalLevel + 1}
           </div>
         ) : state.trainingExercise ? (
           <div className="text-[10px] font-semibold tracking-[0.18em] text-cyan-200 uppercase">
@@ -150,7 +150,7 @@ export default function Hud({
             Salon {state.roomCode} · {state.latency} ms
           </div>
         ) : state.localDuel ? (
-          <div className="text-[10px] font-semibold tracking-[0.3em] text-zinc-300 uppercase">Duel local · W/S · ↑/↓</div>
+          <div className="text-[10px] font-semibold tracking-[0.3em] text-zinc-300 uppercase">Relève NACRE-7 · W/S · ↑/↓</div>
         ) : (
           <div className="text-[10px] font-semibold tracking-[0.4em] text-zinc-500 uppercase">
             Premier à {state.target}

@@ -11,6 +11,7 @@ import PauseOverlay from './ui/PauseOverlay'
 import StartOverlay, { type GameModeTab } from './ui/StartOverlay'
 import TutorialOverlay from './ui/TutorialOverlay'
 import type { DailyChallenge, ReplayFrame } from './game/arcade'
+import { getLoreEntry, LORE_ENTRIES, nextStoryChapter } from './game/lore'
 
 const STORAGE_KEY = 'p1ng-p0ng-settings'
 const NAME_KEY = 'p1ng-p0ng-name'
@@ -19,6 +20,8 @@ const LEADERBOARD_KEY = 'p1ng-p0ng-leaderboard'
 const CHALLENGE_KEY = 'p1ng-p0ng-challenges'
 const ACHIEVEMENT_KEY = 'p1ng-p0ng-achievements'
 const STREAK_KEY = 'p1ng-p0ng-streak'
+const LORE_KEY = 'p1ng-p0ng-lore'
+const STORY_PROGRESS_KEY = 'p1ng-p0ng-story-progress'
 interface LeaderEntry { name: string; score: number; date: string }
 function loadLeaderboard(): Record<string, LeaderEntry[]> {
   if (typeof window === 'undefined') return {}
@@ -183,6 +186,15 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem(STREAK_KEY) ?? '{"lastDate":"","count":0}') as { lastDate: string; count: number } }
     catch { return { lastDate: '', count: 0 } }
   })
+  const [loreIds, setLoreIds] = useState<string[]>(() => {
+    try { return Array.from(new Set(['boot', ...(JSON.parse(localStorage.getItem(LORE_KEY) ?? '[]') as string[])])) }
+    catch { return ['boot'] }
+  })
+  const [latestLoreIds, setLatestLoreIds] = useState<string[]>([])
+  const [storyCompleted, setStoryCompleted] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(STORY_PROGRESS_KEY) ?? '[]') as string[] } catch { return [] }
+  })
+  const storyChapter = nextStoryChapter(storyCompleted)
   const [challengeRecords, setChallengeRecords] = useState<Record<string, { best: number; contract: boolean; replay?: ReplayFrame[] }>>(() => {
     try { return JSON.parse(localStorage.getItem(CHALLENGE_KEY) ?? '{}') as Record<string, { best: number; contract: boolean; replay?: ReplayFrame[] }> }
     catch { return {} }
@@ -222,6 +234,35 @@ export default function App() {
         target: state.target,
         challengeCode: state.challenge?.code,
         contractComplete: state.contractComplete,
+      }
+      const earnedLore = ['handshake']
+      if (result === 'win') earnedLore.push('mirror')
+      if (state.brickMode && state.bricksBroken > 0) earnedLore.push('debris')
+      if (state.matchStats.powerups > 0) earnedLore.push('anomaly')
+      if (state.survivalMode) earnedLore.push('redline')
+      if (state.localDuel || state.mode === 'online') earnedLore.push('two-console')
+      if (state.challenge) earnedLore.push('beacon')
+      if (state.storyMode && state.storyChapter && state.winner === 'player') earnedLore.push(state.storyChapter.loreUnlock)
+      const discovered = new Set([...loreIds, ...earnedLore])
+      const milestones = ['handshake', 'mirror', 'debris', 'anomaly', 'redline', 'two-console', 'beacon']
+      if (milestones.filter((id) => discovered.has(id)).length >= 4) {
+        earnedLore.push('origin')
+        discovered.add('origin')
+      }
+      const freshLore = LORE_ENTRIES.filter((fragment) => earnedLore.includes(fragment.id) && !loreIds.includes(fragment.id))
+      if (freshLore.length > 0) setLatestLoreIds(freshLore.map((fragment) => fragment.id))
+      setLoreIds((previous) => {
+        const next = Array.from(new Set([...previous, ...earnedLore]))
+        try { localStorage.setItem(LORE_KEY, JSON.stringify(next.filter((id) => id !== 'boot'))) } catch { /* stockage indisponible */ }
+        return next
+      })
+      if (state.storyMode && state.storyChapter && state.winner === 'player') {
+        setStoryCompleted((previous) => {
+          if (previous.includes(state.storyChapter!.id)) return previous
+          const next = [...previous, state.storyChapter!.id]
+          try { localStorage.setItem(STORY_PROGRESS_KEY, JSON.stringify(next)) } catch { /* stockage indisponible */ }
+          return next
+        })
       }
       setHistory((prev) => {
         const next = [entry, ...prev].slice(0, 20)
@@ -277,6 +318,9 @@ export default function App() {
       }
     }
     lastPhaseRef.current = state.phase
+  }, [state?.phase])
+  useEffect(() => {
+    if (state?.phase === 'playing') setLatestLoreIds([])
   }, [state?.phase])
   useEffect(() => {
     if (dailyStreak.count < 3) return
@@ -458,6 +502,7 @@ export default function App() {
   const handleModeTabChange = useCallback((nextTab: GameModeTab) => {
     setTab(nextTab)
     engineRef.current?.setArcadeChallenge(null)
+    engineRef.current?.setStoryMode(null)
     engineRef.current?.setSurvivalMode(false)
     engineRef.current?.setLocalDuel(false)
     engineRef.current?.setTrainingExercise(null)
@@ -600,6 +645,10 @@ export default function App() {
           onStart={() => {
             audio.init()
             audio.click()
+            if (tab === 'story' && storyChapter) {
+              setSettings((previous) => ({ ...previous, difficulty: storyChapter.difficulty, target: storyChapter.target, format: 'points', powerups: storyChapter.powerups, brickMode: false, orientation: 'landscape' }))
+              engineRef.current?.setStoryMode(storyChapter)
+            }
             engineRef.current?.start()
           }}
           onColorChange={handleColorChange}
@@ -704,6 +753,10 @@ export default function App() {
               setSettings((prev) => ({ ...prev, difficulty: 'facile', target: 99, format: 'points', powerups: false, brickMode: false, orientation: 'landscape' }))
             }
           }}
+          loreIds={loreIds}
+          storyChapter={storyChapter}
+          storyCompleted={storyCompleted}
+          onStoryMode={(chapter) => engineRef.current?.setStoryMode(chapter)}
         />
       )}
 
@@ -715,6 +768,10 @@ export default function App() {
             setTutorialOpen(false)
             if (tab === 'online') return
             audio.init()
+            if (tab === 'story' && storyChapter) {
+              setSettings((previous) => ({ ...previous, difficulty: storyChapter.difficulty, target: storyChapter.target, format: 'points', powerups: storyChapter.powerups, brickMode: false, orientation: 'landscape' }))
+              engineRef.current?.setStoryMode(storyChapter)
+            }
             engineRef.current?.start()
           }}
         />
@@ -740,12 +797,19 @@ export default function App() {
       {state?.phase === 'gameover' && (
         <EndOverlay
           state={state}
+          storyChapter={state.storyChapter}
+          nextStoryChapter={state.storyMode && state.winner === 'player' ? nextStoryChapter(storyCompleted) : null}
+          loreReveals={latestLoreIds.flatMap((id) => {
+            const entry = getLoreEntry(id)
+            return entry ? [entry] : []
+          })}
           onRestart={() => {
             audio.click()
             engineRef.current?.restart()
           }}
           onMenu={() => {
             audio.click()
+            engineRef.current?.setStoryMode(null)
             engineRef.current?.backToMenu()
             setTab('ai')
           }}

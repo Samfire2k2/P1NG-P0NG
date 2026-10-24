@@ -9,10 +9,12 @@ interface TutorialOverlayProps {
 }
 
 const STEPS = [
-  { title: 'Bienvenue dans l’arène', text: 'P1NG-P0NG se joue en duel contre l’IA ou un autre joueur. En casse-brique, renvoie la balle dans le mur et rattrape-la : tu as trois vies.' },
+  { title: 'Un relais te répond', text: 'Tu es connecté à NACRE-7, un relais lunaire resté seul depuis que la Terre s’est tue. Son noyau ORION utilise une partie de Pong pour vérifier qu’un opérateur est toujours à l’écoute. L’IA rejoue les gestes archivés de Mina, l’ancienne opératrice.' },
   { title: 'Déplace ta raquette', text: 'À la souris, déplace le curseur sur le terrain. Sur écran tactile, fais glisser le doigt ou maintiens les boutons fléchés. Tu peux aussi utiliser ZQSD ou les flèches du clavier.' },
-  { title: 'Lis les bonus', text: 'Quand les bonus sont activés, attrape les capsules colorées pour appliquer leur effet. Voici leur fonction :' },
-  { title: 'Suis la manche', text: 'Le score, le temps et l’état de connexion restent visibles pendant la partie. En casse-brique, surveille tes vies et les briques restantes. Mets le jeu en pause à tout moment.' },
+  { title: 'Dégage les archives', text: 'En casse-brique, les blocs sont des fragments de mémoire corrompus qui brouillent le signal. Détruis-les et rattrape la balle : ORION pourra restaurer ses journaux.' },
+  { title: 'Les anomalies du signal', text: 'Les capsules de bonus sont des paquets de commandes perdus dans le réseau. Attrape-les pour appliquer leur effet. Voici ce que chaque paquet peut faire :' },
+  { title: 'Restaure les transmissions', text: 'Après certaines parties, ORION te confiera un nouveau fragment de son journal. Les défis, la survie, le casse-brique et le jeu en duo révèlent chacun une partie du passé. Tape « lore » dans le terminal pour relire les archives.' },
+  { title: 'Suis la manche', text: 'Le score, le temps et l’état de connexion restent visibles pendant la partie. En casse-brique, surveille tes vies et les fragments restants. Mets le jeu en pause à tout moment.' },
 ]
 
 export default function TutorialOverlay({ onClose, onStart, startLabel = 'Jouer' }: TutorialOverlayProps) {

@@ -10,6 +10,8 @@ Un jeu de Pong néon qui se joue dans le navigateur. Affronte l’IA, détruis u
 - **Entraînement** : exercices de 30 rebonds sur les murs ou 20 renvois précis au centre.
 - **Défi quotidien** : partie reproductible avec code partageable, contrat, record local et fantôme de la meilleure tentative.
 - **Progression** : série de défis, succès, thèmes cosmétiques à débloquer et rapport détaillé après chaque partie.
+- **Mode histoire** : progresse à travers cinq chapitres pour découvrir pourquoi le relais lunaire NACRE-7 est seul et qui répond à son signal. Chaque mission possède une illustration et débloque une transmission dans le journal (`lore`).
+- **Skins d’histoire** : change l’apparence du terrain dans la campagne, du relais bleu aux archives dégradées et à la liaison restaurée.
 - **Casse-brique** : mode solo sans IA. Envoie la balle vers un grand mur trapézoïdal, puis rattrape-la à son retour. Jouable uniquement en portrait, avec trois vies.
 - **En ligne** : crée un salon privé ou public, invite un adversaire avec un lien ou un code, et regarde une partie en spectateur.
 - **Personnalisation** : couleur des raquettes, bonus, thèmes, orientation et intensité de la lueur.

@@ -1,14 +1,19 @@
 import { rgbToCss, hsvToRgb } from '../game/colors'
 import type { EngineState } from '../game/engine'
 import { IconHome, IconPlay, IconTrophy } from './icons'
+import type { LoreEntry, StoryChapter } from '../game/lore'
+import StoryIllustration from './StoryIllustration'
 
 interface EndOverlayProps {
   state: EngineState
   onRestart: () => void
   onMenu: () => void
+  loreReveals?: LoreEntry[]
+  storyChapter?: StoryChapter | null
+  nextStoryChapter?: StoryChapter | null
 }
 
-export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps) {
+export default function EndOverlay({ state, onRestart, onMenu, loreReveals = [], storyChapter = null, nextStoryChapter = null }: EndOverlayProps) {
   const online = state.mode === 'online'
   const localIsLeft = state.side === 'left'
   const localScore = localIsLeft ? state.scorePlayer : state.scoreAi
@@ -44,6 +49,18 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
           {brickMode ? (won ? 'Mur détruit' : 'Plus de vies') : state.survivalMode ? 'Survie terminée' : state.trainingExercise ? 'Exercice terminé' : draw ? 'Match nul' : won ? 'Match gagné' : 'Match perdu'}
         </p>
 
+        {state.storyMode && storyChapter && (
+          <article className="mt-5 overflow-hidden rounded-lg border border-cyan-200/15 bg-cyan-200/[0.03] text-left">
+            <StoryIllustration kind={storyChapter.illustration} />
+            <div className="p-3">
+              <div className="font-mono-game text-[9px] tracking-[0.2em] text-cyan-200/60 uppercase">Transmission NACRE-7 // Chapitre {storyChapter.number}</div>
+              <h3 className="mt-1 font-mono-game text-sm font-bold text-cyan-100">{storyChapter.title}</h3>
+              <p className="mt-2 text-[10px] leading-relaxed text-zinc-300">{storyChapter.narrative}</p>
+              <p className="mt-2 font-mono-game text-[9px] text-cyan-100/70">{won ? nextStoryChapter ? `Signal validé. Chapitre suivant : ${nextStoryChapter.title}.` : 'Signal validé. La liaison avec la Terre est rétablie.' : 'Liaison interrompue. Recommence ce chapitre pour poursuivre la transmission.'}</p>
+            </div>
+          </article>
+        )}
+
         {brickMode ? (
           <div className="font-mono-game mt-6 text-2xl font-bold sm:text-3xl" style={{ color: accent }}>
             {state.bricksBroken} briques détruites
@@ -57,6 +74,19 @@ export default function EndOverlay({ state, onRestart, onMenu }: EndOverlayProps
             {state.scoreAi}
           </span>
         </div>}
+
+        {loreReveals.length > 0 && (
+          <div className="mt-5 max-h-48 space-y-2 overflow-y-auto text-left">
+            {loreReveals.map((fragment) => (
+              <article key={fragment.id} className="rounded-lg border border-cyan-200/20 bg-cyan-200/[0.04] p-3">
+                <div className="font-mono-game text-[9px] tracking-[0.2em] text-cyan-200/70 uppercase">Archive restaurée // {fragment.source}</div>
+                <h3 className="mt-1 font-mono-game text-sm font-bold text-cyan-100">[{fragment.index}] {fragment.title}</h3>
+                <p className="mt-2 font-mono-game text-[10px] leading-relaxed text-white/80">{fragment.transmission}</p>
+                <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">{fragment.record}</p>
+              </article>
+            ))}
+          </div>
+        )}
 
         <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg border border-white/8 bg-black/25 p-3 text-left font-mono-game text-[10px] text-zinc-400">
           <span>Durée</span><span className="text-right text-zinc-200">{Math.floor(state.matchStats.duration / 60)}:{Math.floor(state.matchStats.duration % 60).toString().padStart(2, '0')}</span>

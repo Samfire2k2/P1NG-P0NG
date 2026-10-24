@@ -8,8 +8,10 @@ import ColorPicker from './ColorPicker'
 import { IconPalette } from './icons'
 import OnlineLobby from './OnlineLobby'
 import { CONTRACT_INFO, getDailyChallenge, MODIFIER_INFO, parseChallengeCode, type DailyChallenge } from '../game/arcade'
+import { formatLoreLog, LORE_ENTRIES, STORY_CHAPTERS, STORY_SKINS, type StoryChapter } from '../game/lore'
+import StoryIllustration from './StoryIllustration'
 
-export type GameModeTab = 'ai' | 'online' | 'brick'
+export type GameModeTab = 'ai' | 'online' | 'brick' | 'story'
 
 const POWERUP_COLOR: Record<(typeof POWERUP_TYPES)[number], string> = {
   speed: '#ffb71b', slow: '#33baff', grow: '#47e875', shrink: '#ff526d',
@@ -27,7 +29,7 @@ const TERMINAL_COMMANDS = [
   'aide', 'help', '?', 'solo', 'solo facile', 'solo moyen', 'solo difficile', 'solo expert',
   'solo facile 7 pts', 'solo moyen 11 pts', 'solo expert 3 min', 'solo expert 3 min bonus',
   'solo facile 7 pts sans bonus', 'duel', 'en ligne', 'online', 'casse-brique', 'brick',
-  'lancer', 'start', 'jouer', 'bonus', 'sans bonus', 'defi', 'entrainement', 'entrainement rebonds', 'entrainement precision', 'survie', 'duel local',
+  'lancer', 'start', 'jouer', 'bonus', 'sans bonus', 'defi', 'lore', 'journal', 'histoire', 'entrainement', 'entrainement rebonds', 'entrainement precision', 'survie', 'duel local',
 ]
 
 interface StartOverlayProps {
@@ -82,6 +84,10 @@ interface StartOverlayProps {
   onSurvival: (enabled: boolean) => void
   onLocalDuel: (enabled: boolean) => void
   onTrainingExercise: (exercise: 'rebonds' | 'precision' | null) => void
+  loreIds: string[]
+  storyChapter: StoryChapter | null
+  storyCompleted: string[]
+  onStoryMode: (chapter: StoryChapter | null, theme?: number) => void
 }
 
 export default function StartOverlay({
@@ -136,6 +142,10 @@ export default function StartOverlay({
   onSurvival,
   onLocalDuel,
   onTrainingExercise,
+  loreIds,
+  storyChapter,
+  storyCompleted,
+  onStoryMode,
 }: StartOverlayProps) {
   const netStatus: NetStatus = state.netStatus
   const [historyFilter, setHistoryFilter] = useState<'all' | 'ai' | 'online' | 'brick'>('all')
@@ -144,6 +154,11 @@ export default function StartOverlay({
   const [terminalEntered, setTerminalEntered] = useState(false)
   const [completion, setCompletion] = useState<{ prefix: string; candidates: string[]; index: number } | null>(null)
   const commandHelp = [
+    'NACRE-7 // RELAIS LUNAIRE // NOYAU ORION EN LIGNE',
+    'La Terre ne répond plus depuis la Grande Coupure. Je surveille seul ce relais.',
+    'Je t’envoie un signal sous forme de balle. Renvoyer la balle confirme ta présence.',
+    'Je ne reconnais pas ta signature, opérateur. Si tu me lis, joue une partie.',
+    '',
     'aide ........................ affiche cette aide',
     'solo [niveau] [format] [bonus] configure Pong contre l’IA',
     '  niveaux : facile | moyen | difficile | expert',
@@ -157,6 +172,8 @@ export default function StartOverlay({
     'entrainement precision ....... exercice de 20 renvois centraux',
     'survie ....................... tiens le plus longtemps face a une IA qui accelere',
     'duel local ................... deux joueurs : W/S et fleches haut/bas',
+    'lore / journal ............... consulte les transmissions restaurées',
+    'histoire ...................... lance la campagne de NACRE-7',
     'lancer ...................... démarre la partie configurée',
     '',
     'Exemples : solo facile 7 pts bonus · solo expert 3 min · duel · casse-brique',
@@ -177,6 +194,24 @@ export default function StartOverlay({
 
     if (/^(aide|help|\?)$/.test(value)) {
       setCommandFeedback(commandHelp)
+      setCommand('')
+      return
+    }
+    if (/^(lore|journal|archives)$/.test(value)) {
+      setCommandFeedback(formatLoreLog(loreIds))
+      setCommand('')
+      return
+    }
+    if (/^(histoire|story|campagne)$/.test(value)) {
+      onDailyChallenge(null)
+      onSurvival(false)
+      onLocalDuel(false)
+      onTrainingExercise(null)
+      onTabChange('story')
+      setTerminalEntered(true)
+      setCommandFeedback(storyChapter
+        ? `CAMPAGNE NACRE-7 // CHAPITRE ${storyChapter.number} : ${storyChapter.title.toUpperCase()} // CHOISIS UN SKIN, PUIS TAPE « LANCER »`
+        : 'CAMPAGNE TERMINÉE // TAPE « LORE » POUR RELIRE LE DERNIER JOURNAL D’ORION')
       setCommand('')
       return
     }
@@ -216,6 +251,8 @@ export default function StartOverlay({
       if (tab === 'online') {
         if (canStart) onStartMatch()
         else setCommandFeedback('Salon en attente // connecte un adversaire avant de lancer.')
+      } else if (tab === 'story' && !storyChapter) {
+        setCommandFeedback('CAMPAGNE TERMINÉE // aucune mission restante')
       } else {
         onStart()
       }
@@ -250,6 +287,7 @@ export default function StartOverlay({
       ?? value.match(/(?:^|\s)(5|7|11|15)(?=\s|$)/)
     const disablesBonus = /\b(sans (?:les )?bonus|bonus off|bonus d[ée]sactiv[ée]s?)\b/.test(value)
     const bonusCommand = disablesBonus || /\b(bonus|power ?ups?)\b/.test(value)
+    if (tab === 'story' && !modeCommand) nextTab = 'ai'
     if (!modeCommand && (difficulty || durationMatch || pointsMatch)) nextTab = 'ai'
     if (!modeCommand && !difficulty && !durationMatch && !pointsMatch && !bonusCommand) {
       setCommandFeedback('Commande inconnue. Exemples : « solo facile 7 points », « duel », « casse-brique ».')
@@ -259,6 +297,7 @@ export default function StartOverlay({
     onSurvival(false)
     onLocalDuel(false)
     onTrainingExercise(null)
+    onStoryMode(null)
     setTerminalEntered(true)
     if (nextTab !== tab) onTabChange(nextTab)
 
@@ -376,7 +415,7 @@ export default function StartOverlay({
               </button>
             ))}
           </div>
-          <p id="command-feedback" className="mt-2 min-h-3 text-[9px] text-[var(--accent)]" role="status" aria-live="polite">{commandFeedback}</p>
+          <p id="command-feedback" className="mt-2 max-h-64 min-h-3 overflow-y-auto whitespace-pre-line text-[9px] leading-relaxed text-[var(--accent)]" role="status" aria-live="polite">{commandFeedback}</p>
         </form>
         {state.challenge && (
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-200/20 bg-cyan-300/5 px-3 py-2 font-mono-game text-[10px] text-cyan-100/80">
@@ -386,17 +425,33 @@ export default function StartOverlay({
             <button type="button" className="glass-button rounded px-2 py-1" onClick={() => { void navigator.clipboard?.writeText(state.challenge!.code); setCommandFeedback(`CODE ${state.challenge!.code} COPIÉ // partage-le pour comparer vos scores`) }}>Copier {state.challenge.code}</button>
           </div>
         )}
+        <details className="mb-5 rounded-lg border border-cyan-200/10 bg-black/25 p-3">
+          <summary className="cursor-pointer font-mono-game text-[10px] tracking-[0.18em] text-cyan-100/70 uppercase">
+            Archives NACRE-7 // {loreIds.length}/{LORE_ENTRIES.length} fragments restaurés
+          </summary>
+          <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+            {LORE_ENTRIES.filter((entry) => loreIds.includes(entry.id)).map((entry) => (
+              <article key={entry.id} className="rounded-md border border-white/5 bg-white/[0.02] p-2.5">
+                <div className="font-mono-game text-[9px] tracking-wider text-cyan-200/80">[{entry.index}] {entry.title} // {entry.source}</div>
+                <p className="mt-1 text-[10px] leading-relaxed text-white/75">{entry.transmission}</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{entry.record}</p>
+              </article>
+            ))}
+            {loreIds.length < LORE_ENTRIES.length && <p className="px-2 py-1 font-mono-game text-[9px] text-zinc-600">{LORE_ENTRIES.length - loreIds.length} fragment(s) restent chiffrés. Gagne un match, casse des briques, tiens en survie, lance un défi quotidien et joue en duo pour retrouver les archives.</p>}
+          </div>
+        </details>
         <div className="terminal-mode-line mb-6 flex items-center gap-2 font-mono-game text-[10px] tracking-[0.16em] text-emerald-300/70 uppercase">
           <span className="terminal-status">Mode actif</span>
-          <span>{state.localDuel ? 'DUEL LOCAL / 2 JOUEURS' : state.survivalMode ? 'SURVIE / IA ADAPTATIVE' : state.trainingExercise ? `ENTRAINEMENT / ${state.trainingExercise.toUpperCase()}` : tab === 'online' ? 'DUEL EN LIGNE' : tab === 'brick' ? 'CASSE-BRIQUE / SOLO' : 'PONG / IA'}</span>
+          <span>{tab === 'story' ? `HISTOIRE NACRE-7 / ${storyChapter ? `CH. ${storyChapter.number} // ${storyChapter.title}` : 'CAMPAGNE TERMINEE'}` : state.localDuel ? 'DUEL LOCAL / 2 JOUEURS' : state.survivalMode ? 'SURVIE / IA ADAPTATIVE' : state.trainingExercise ? `ENTRAINEMENT / ${state.trainingExercise.toUpperCase()}` : tab === 'online' ? 'DUEL EN LIGNE' : tab === 'brick' ? 'CASSE-BRIQUE / SOLO' : 'PONG / IA'}</span>
         </div>
         {/* Onglets de mode */}
-        <div className="mb-7 grid grid-cols-3 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
+        <div className="mb-7 grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-xl border border-white/8 bg-black/25 p-1.5">
           {(
             [
               { id: 'ai' as const, label: 'Contre l’IA', hint: '4 niveaux' },
               { id: 'online' as const, label: 'En ligne', hint: 'Duel à deux' },
               { id: 'brick' as const, label: 'Casse-brique', hint: 'Solo · portrait' },
+              { id: 'story' as const, label: 'Histoire', hint: 'Campagne NACRE-7' },
             ]
           ).map((item) => {
             const active = tab === item.id
@@ -442,8 +497,9 @@ export default function StartOverlay({
                   P<span className="brand-dark-digit">1</span>NG-P<span className="brand-dark-digit">0</span>NG
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Le Pong de base, en néon. 4 niveaux de difficulté, une balle qui accélère à
-                  chaque rebond et la couleur de ta raquette à choisir. Prêt ?
+                  ORION teste la liaison avec toi. Chaque échange confirme que le relais n’est
+                  plus seul. Son adversaire reprend les gestes d’une ancienne opératrice. Quatre
+                  niveaux, des parties au score ou chronométrées.
                 </p>
               </>
             ) : tab === 'brick' ? (
@@ -457,10 +513,48 @@ export default function StartOverlay({
                   <span className="block text-2xl leading-tight sm:text-3xl">Contre un mur de briques</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Envoie la balle vers le mur avec ta raquette, puis rattrape-la à son retour pour
-                  continuer. Détruis toutes les briques : tu as 3 vies et ce mode se joue
-                  uniquement en portrait.
+                  Ces briques sont des fragments d’archives corrompues qui bloquent la mémoire
+                  d’ORION. Dégage le canal, puis rattrape la balle au retour. Trois vies, portrait
+                  uniquement.
                 </p>
+              </>
+            ) : tab === 'story' ? (
+              <>
+                <div className="mb-3 flex items-center gap-2 font-mono-game text-[10px] tracking-[0.3em] text-cyan-100/60 uppercase">
+                  <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_#67dfff]" /> CAMPAGNE NARRATIVE // NACRE-7
+                </div>
+                {storyChapter ? (
+                  <>
+                    <StoryIllustration kind={storyChapter.illustration} className="mb-4" />
+                    <div className="font-mono-game text-[9px] tracking-[0.2em] text-cyan-200/60 uppercase">{storyChapter.signal} // CHAPITRE {storyChapter.number}</div>
+                    <h1 className="ping-title mt-2 text-3xl leading-tight font-bold sm:text-4xl">{storyChapter.title}</h1>
+                    <p className="mt-3 text-xs leading-relaxed text-zinc-300">{storyChapter.narrative}</p>
+                    <div className="mt-4 rounded-md border border-cyan-100/10 bg-cyan-100/[0.03] p-3">
+                      <div className="font-mono-game text-[9px] tracking-[0.2em] text-cyan-100/50 uppercase">Mission</div>
+                      <p className="mt-1 text-xs text-cyan-50">{storyChapter.objective}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <StoryIllustration kind="origin" className="mb-4" />
+                    <h1 className="ping-title text-3xl font-bold">Campagne terminee</h1>
+                    <p className="mt-3 text-xs leading-relaxed text-zinc-300">ORION a recu ta reponse. Tape « lore » dans le terminal pour relire le journal du relais.</p>
+                  </>
+                )}
+                {storyChapter && (() => {
+                  const skin = STORY_SKINS.find((item) => item.theme === storyChapter.theme)
+                  return skin ? <div className="mt-4 flex items-center gap-2 rounded-md border border-white/8 bg-black/20 px-3 py-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: skin.color, boxShadow: `0 0 8px ${skin.color}` }} />
+                    <span className="font-mono-game text-[9px] tracking-[0.15em] text-zinc-400 uppercase">Skin du niveau // {skin.label}</span>
+                  </div> : null
+                })()}
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {STORY_CHAPTERS.map((chapter) => {
+                    const complete = storyCompleted.includes(chapter.id)
+                    const current = storyChapter?.id === chapter.id
+                    return <span key={chapter.id} className={`rounded border px-2 py-1 font-mono-game text-[8px] ${complete ? 'border-cyan-200/20 text-cyan-100/70' : current ? 'border-cyan-200/40 text-cyan-100' : 'border-white/5 text-zinc-700'}`}>{complete ? 'OK' : current ? 'ACTIF' : 'VERROUILLE'} {String(chapter.number).padStart(2, '0')}</span>
+                  })}
+                </div>
               </>
             ) : (
               <>
@@ -473,8 +567,9 @@ export default function StartOverlay({
                   <span className="block text-2xl sm:text-3xl">1 contre 1</span>
                 </h1>
                 <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-400">
-                  Crée un salon, envoie le lien. Ton adversaire clique, la partie démarre. La
-                  connexion passe en direct entre les deux navigateurs, sans serveur de jeu.
+                  Une autre console répond à NACRE-7. Crée un salon et partage le lien pour tenir
+                  la relève avec un autre opérateur. La connexion passe directement entre les
+                  navigateurs.
                 </p>
               </>
             )}
@@ -595,6 +690,7 @@ export default function StartOverlay({
                   </>
                 )}
 
+                {tab !== 'story' && (
                 <details className="mt-5 rounded-xl border border-white/8 bg-black/20 p-3">
                   <summary className="cursor-pointer text-xs font-semibold tracking-[0.12em] text-zinc-300">
                     Personnaliser le jeu
@@ -772,6 +868,7 @@ export default function StartOverlay({
               </div>
                   </div>
                 </details>
+                )}
 
               {/* Astuce de contrôle */}
               <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
@@ -813,10 +910,10 @@ export default function StartOverlay({
           </div>
         </div>
         <div className="mt-7 text-center">
-          {tab !== 'online' && <div className="mb-3 text-[9px] font-semibold tracking-[0.28em] text-zinc-600 uppercase">Session prête // confirme pour démarrer</div>}
+          {tab !== 'online' && <div className="mb-3 text-[9px] font-semibold tracking-[0.28em] text-zinc-600 uppercase">{tab === 'story' ? storyChapter ? `NACRE-7 // CHAPITRE ${storyChapter.number} PRÊT` : 'ORION // ARCHIVES COMPLÈTES' : 'Session prête // confirme pour démarrer'}</div>}
           <div className="flex flex-wrap justify-center gap-2">
-            {tab !== 'online' && (
-              <button type="button" onClick={onStart} className="primary-button rounded-xl px-10 py-3 text-sm font-bold tracking-[0.2em] uppercase">&gt; Lancer la partie ↵</button>
+            {tab !== 'online' && (tab !== 'story' || storyChapter !== null) && (
+              <button type="button" onClick={onStart} className="primary-button rounded-xl px-10 py-3 text-sm font-bold tracking-[0.2em] uppercase">&gt; {tab === 'story' ? 'Lancer le chapitre' : 'Lancer la partie'} ↵</button>
             )}
             <button type="button" onClick={onTutorial} className="glass-button rounded-xl px-5 py-3 text-xs font-semibold tracking-[0.12em] text-zinc-300">Aide / tutoriel</button>
           </div>
