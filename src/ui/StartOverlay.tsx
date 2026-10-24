@@ -371,7 +371,7 @@ export default function StartOverlay({
                     Orientation
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {(['landscape', 'portrait'] as const).map((o) => {
+                    {tab === 'brick' ? ['portrait' as const] : (['landscape', 'portrait'] as const)}.map((o) => {
                       const active = orientation === o
                       return (
                         <button
